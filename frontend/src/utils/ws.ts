@@ -18,7 +18,7 @@ export type SessionResultMessage = {
 export type WsServerMessage = AckMessage | SessionResultMessage | { type: 'error'; message: string };
 
 export function getApiBase(): string {
-  return (import.meta as any).env?.VITE_API_BASE ?? '';
+  return (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
 }
 
 export function getWsBase(): string {
@@ -26,7 +26,7 @@ export function getWsBase(): string {
   if (env) return env;
 
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${window.location.host}`;
+  return `${proto}//localhost:8000`;
 }
 
 export class RppgWebSocketClient {

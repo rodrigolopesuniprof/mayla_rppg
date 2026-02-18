@@ -132,17 +132,20 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     [onResult, onFaceDetected],
   );
 
-  const connect = useCallback(async () => {
-    const url = `${getWsBase()}/ws/sessions/${encodeURIComponent(sessionId)}`;
-    const client = new RppgWebSocketClient(
-      url,
-      handleServerMessage,
-      () => setState((s) => ({ ...s, error: s.isCapturing ? 'Conexão perdida.' : s.error })),
-      () => setState((s) => ({ ...s, error: 'Erro na conexão WebSocket.' })),
-    );
-    clientRef.current = client;
-    await client.connect();
-  }, [handleServerMessage, sessionId]);
+  const connect = useCallback(
+    async (sid: string) => {
+      const url = `${getWsBase()}/ws/sessions/${encodeURIComponent(sid)}`;
+      const client = new RppgWebSocketClient(
+        url,
+        handleServerMessage,
+        () => setState((s) => ({ ...s, error: s.isCapturing ? 'Conexão perdida.' : s.error })),
+        () => setState((s) => ({ ...s, error: 'Erro na conexão WebSocket.' })),
+      );
+      clientRef.current = client;
+      await client.connect();
+    },
+    [handleServerMessage],
+  );
 
   const stop = useCallback(() => {
     cleanupTimers();
@@ -150,94 +153,112 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     disconnect();
   }, [cleanupTimers, disconnect]);
 
-  const start = useCallback(async () => {
-    if (!videoEl) {
-      setState((s) => ({ ...s, error: 'Câmera não pronta.' }));
-      return;
-    }
-    if (!sessionId) {
-      setState((s) => ({ ...s, error: 'Sessão inválida. Inicie novamente.' }));
-      return;
-    }
+  const start = useCallback(
+    async (sessionIdOverride?: string) => {
+      if (!videoEl) {
+        setState((s) => ({ ...s, error: 'Câmera não pronta.' }));
+        return;
+      }
 
-    reset();
-    setState((s) => ({ ...s, isCapturing: true, error: null }));
+      const sid = sessionIdOverride ?? sessionId;
+      if (!sid) {
+        setState((s) => ({ ...s, error: 'Sessão inválida. Inicie novamente.' }));
+        return;
+      }
 
-    try {
-      await connect();
-    } catch {
-      setState((s) => ({ ...s, isCapturing: false, error: 'Falha ao conectar no servidor.' }));
-      return;
-    }
+      reset();
+      setState((s) => ({ ...s, isCapturing: true, error: null }));
 
-    const captureEveryMs = Math.max(80, Math.floor(1000 / Math.max(1, targetFps)));
-
-    // Capture loop (throttled)
-    captureIntervalRef.current = window.setInterval(async () => {
-      if (!clientRef.current?.isOpen()) return;
-      const now = Date.now();
-
-      const ackLag = chunkSeqRef.current - (ackedChunkSeqRef.current + 1);
-      if (ackLag > 2) return;
-      if (now - lastSendAtRef.current < captureEveryMs - 5) return;
-
-      lastSendAtRef.current = now;
       try {
-        const jpeg = await captureJpegFrame({
-          video: videoEl,
-          canvas: workCanvas,
+        await connect(sid);
+      } catch {
+        setState((s) => ({ ...s, isCapturing: false, error: 'Falha ao conectar no servidor.' }));
+        return;
+      }
+
+      const captureEveryMs = Math.max(80, Math.floor(1000 / Math.max(1, targetFps)));
+
+      // Capture loop (throttled)
+      captureIntervalRef.current = window.setInterval(async () => {
+        if (!clientRef.current?.isOpen()) return;
+        const now = Date.now();
+
+        const ackLag = chunkSeqRef.current - (ackedChunkSeqRef.current + 1);
+        if (ackLag > 2) return;
+        if (now - lastSendAtRef.current < captureEveryMs - 5) return;
+
+        lastSendAtRef.current = now;
+        try {
+          const jpeg = await captureJpegFrame({
+            video: videoEl,
+            canvas: workCanvas,
+            width,
+            height,
+            jpegQuality,
+          });
+          pendingFramesRef.current.push(jpeg);
+        } catch {
+          // ignore occasional frame failures
+        }
+      }, Math.max(30, Math.floor(captureEveryMs / 2)));
+
+      // Chunk send loop (every 1s)
+      chunkIntervalRef.current = window.setInterval(() => {
+        const client = clientRef.current;
+        if (!client || !client.isOpen()) return;
+
+        const frames = pendingFramesRef.current.splice(0, maxChunkSize);
+        if (frames.length === 0) return;
+
+        const chunk_seq = chunkSeqRef.current++;
+        const payload = {
+          chunk_seq,
+          ts_start_ms: Date.now(),
+          fps_est: frames.length,
           width,
           height,
-          jpegQuality,
-        });
-        pendingFramesRef.current.push(jpeg);
-      } catch {
-        // ignore occasional frame failures
-      }
-    }, Math.max(30, Math.floor(captureEveryMs / 2)));
+          n: frames.length,
+          frames: frames.map(toBase64),
+        };
 
-    // Chunk send loop (every 1s)
-    chunkIntervalRef.current = window.setInterval(() => {
-      const client = clientRef.current;
-      if (!client || !client.isOpen()) return;
+        try {
+          // Build 1 backend expects JSON
+          client.sendJson(payload);
+          setState((s) => ({
+            ...s,
+            chunksSent: s.chunksSent + 1,
+            framesSent: s.framesSent + frames.length,
+          }));
+        } catch (e: any) {
+          setState((s) => ({ ...s, error: e?.message ?? 'Falha ao enviar chunk' }));
+        }
+      }, 1000);
 
-      const frames = pendingFramesRef.current.splice(0, maxChunkSize);
-      if (frames.length === 0) return;
-
-      const chunk_seq = chunkSeqRef.current++;
-      const payload = {
-        chunk_seq,
-        ts_start_ms: Date.now(),
-        fps_est: frames.length,
-        width,
-        height,
-        n: frames.length,
-        frames: frames.map(toBase64),
-      };
-
-      try {
-        // Build 1 backend expects JSON
-        client.sendJson(payload);
-        setState((s) => ({
-          ...s,
-          chunksSent: s.chunksSent + 1,
-          framesSent: s.framesSent + frames.length,
-        }));
-      } catch (e: any) {
-        setState((s) => ({ ...s, error: e?.message ?? 'Falha ao enviar chunk' }));
-      }
-    }, 1000);
-
-    // Timer
-    const startedAt = Date.now();
-    timerIntervalRef.current = window.setInterval(() => {
-      const elapsed = (Date.now() - startedAt) / 1000;
-      setState((s) => ({ ...s, secondsElapsed: Math.floor(elapsed) }));
-      if (elapsed >= captureSeconds) {
-        stop();
-      }
-    }, 250);
-  }, [captureSeconds, connect, height, jpegQuality, maxChunkSize, reset, sessionId, stop, targetFps, videoEl, width, workCanvas]);
+      // Timer
+      const startedAt = Date.now();
+      timerIntervalRef.current = window.setInterval(() => {
+        const elapsed = (Date.now() - startedAt) / 1000;
+        setState((s) => ({ ...s, secondsElapsed: Math.floor(elapsed) }));
+        if (elapsed >= captureSeconds) {
+          stop();
+        }
+      }, 250);
+    },
+    [
+      captureSeconds,
+      connect,
+      height,
+      jpegQuality,
+      maxChunkSize,
+      reset,
+      sessionId,
+      stop,
+      targetFps,
+      videoEl,
+      width,
+      workCanvas,
+    ],
+  );
 
   useEffect(() => {
     return () => {

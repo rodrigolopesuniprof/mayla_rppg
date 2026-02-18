@@ -69,14 +69,10 @@ export default function App() {
 
     try {
       const p = await startSession(true);
-      // Ensure webcam uses resolution immediately.
       await webcam.start();
-      // Start WS capture
       await new Promise((r) => setTimeout(r, 150));
-      await rppg.start();
-
-      // Use p to avoid lint warnings.
-      void p;
+      // Important: pass the freshly returned session_id to avoid React state timing issues
+      await rppg.start(p.session_id);
     } catch {
       // errors are already set
     }
@@ -102,7 +98,11 @@ export default function App() {
         Build atual: <b>{effectiveParams.mock_mode ? 'Build 1 (Mock)' : 'Build 2 (Real)'}</b>
       </p>
 
-      {globalError ? <div className="error" style={{ marginBottom: 12 }}>{globalError}</div> : null}
+      {globalError ? (
+        <div className="error" style={{ marginBottom: 12 }}>
+          {globalError}
+        </div>
+      ) : null}
 
       <div className="row">
         <div style={{ flex: 1, minWidth: 320 }}>

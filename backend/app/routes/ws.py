@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..services.rppg_service import SESSION_MANAGER
@@ -10,26 +11,43 @@ router = APIRouter(tags=["ws"])
 
 @router.websocket("/ws/sessions/{session_id}")
 async def ws_session(websocket: WebSocket, session_id: str):
+    # IMPORTANT: accept immediately (per requirement)
     await websocket.accept()
+
+    client = None
+    try:
+        client = websocket.client
+    except Exception:
+        client = None
+
+    client_str = f"{client.host}:{client.port}" if client else "unknown"
+    print(f"[WS] accept session_id={session_id} client={client_str}")
 
     s = SESSION_MANAGER.get(session_id)
     if not s:
+        print(f"[WS] invalid session_id={session_id} (not found/expired)")
         await websocket.send_text(json.dumps({"type": "error", "message": "session_not_found_or_expired"}))
+        # keep it explicit; client sees the error
         await websocket.close(code=4404)
         return
 
     SESSION_MANAGER.touch_started(session_id)
+    started_at = time.time()
+    print(
+        f"[WS] session started session_id={session_id} capture_seconds={s.capture_seconds} max_chunk_size={s.max_chunk_size}"
+    )
 
     try:
         while True:
             msg = await websocket.receive_text()
+
             try:
                 payload = json.loads(msg)
             except Exception:
+                print(f"[WS] invalid_json session_id={session_id}")
                 await websocket.send_text(json.dumps({"type": "error", "message": "invalid_json"}))
                 continue
 
-            # Build 1: JSON + base64 frames
             frames = payload.get("frames")
             n = payload.get("n")
             chunk_seq = payload.get("chunk_seq")
@@ -45,7 +63,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
             if not isinstance(n, int):
                 n = len(frames)
 
-            # Estimate sizes (base64 payload size isn't raw bytes, but it still protects memory)
+            # NOTE: we do not decode base64 frames in Build 1 (privacy+perf); just count sizes.
             frame_sizes = [len(f) if isinstance(f, str) else 0 for f in frames]
             total_bytes = sum(frame_sizes)
 
@@ -57,22 +75,44 @@ async def ws_session(websocket: WebSocket, session_id: str):
                     frame_sizes=frame_sizes,
                 )
             except ValueError as e:
+                print(f"[WS] guardrail_triggered session_id={session_id} err={str(e)}")
                 await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
                 await websocket.close(code=4400)
                 return
 
-            # Ack
+            s2 = SESSION_MANAGER.get(session_id)
+            print(
+                f"[WS] chunk session_id={session_id} chunk_seq={chunk_seq} n={n} bytes~={total_bytes} totals: frames={s2.frames_received if s2 else '?'} chunks={s2.chunks_received if s2 else '?'}"
+            )
+
+            # Ack per chunk
             await websocket.send_text(json.dumps({"type": "ack", "chunk_seq": chunk_seq, "received": n}))
 
-            # Finalize after capture_seconds since first chunk
-            if SESSION_MANAGER.should_finalize(session_id):
+            # Finalize after capture_seconds since start
+            elapsed = time.time() - started_at
+            if elapsed >= s.capture_seconds:
                 result = SESSION_MANAGER.finalize_mock(session_id)
+                print(f"[WS] finalize session_id={session_id} elapsed={elapsed:.2f}s result={result}")
                 await websocket.send_text(json.dumps(result))
+                # Close AFTER sending result
                 await websocket.close(code=1000)
                 SESSION_MANAGER.end_session(session_id)
                 return
 
     except WebSocketDisconnect:
+        print(f"[WS] disconnect session_id={session_id}")
         # Client disconnected early: cleanup
+        SESSION_MANAGER.end_session(session_id)
+        return
+    except Exception as e:
+        print(f"[WS] error session_id={session_id} err={repr(e)}")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": "server_error"}))
+        except Exception:
+            pass
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
         SESSION_MANAGER.end_session(session_id)
         return
