@@ -11,7 +11,6 @@ router = APIRouter(tags=["ws"])
 
 @router.websocket("/ws/sessions/{session_id}")
 async def ws_session(websocket: WebSocket, session_id: str):
-    # IMPORTANT: accept immediately (per requirement)
     await websocket.accept()
 
     client = None
@@ -38,9 +37,28 @@ async def ws_session(websocket: WebSocket, session_id: str):
 
     async def _finalize(reason: str):
         elapsed = time.time() - started_at
-        result = SESSION_MANAGER.finalize_mock(session_id)
+        try:
+            result = SESSION_MANAGER.finalize_mock(session_id)
+        except Exception as e:
+            result = {
+                "type": "result",
+                "bpm": None,
+                "confidence": 0.0,
+                "quality": "poor",
+                "message": "Falha ao finalizar sessão.",
+                "duration_s": round(elapsed, 2),
+                "frames_received": 0,
+                "face_detect_rate": 0.0,
+                "snr_db": None,
+                "bpm_series": None,
+            }
+            print(f"[WS] finalize error session_id={session_id} err={repr(e)}")
+
         result["type"] = "result"
-        print(f"[WS] finalize session_id={session_id} reason={reason} elapsed={elapsed:.2f}s result={result}")
+        # Prefer server-side measured duration
+        result["duration_s"] = round(elapsed, 2)
+
+        print(f"[WS] finalize session_id={session_id} reason={reason} elapsed={elapsed:.2f}s")
         await websocket.send_text(json.dumps(result))
         await websocket.close(code=1000)
         SESSION_MANAGER.end_session(session_id)
@@ -62,7 +80,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
                 return
 
             frames = payload.get("frames")
-            n = payload.get("n")
+            n_declared = payload.get("n")
             chunk_seq = payload.get("chunk_seq")
 
             if not isinstance(chunk_seq, int):
@@ -73,35 +91,24 @@ async def ws_session(websocket: WebSocket, session_id: str):
                 await websocket.send_text(json.dumps({"type": "error", "message": "missing_frames"}))
                 continue
 
-            if not isinstance(n, int):
-                n = len(frames)
-
-            # NOTE: we do not decode base64 frames in Build 1 (privacy+perf); just count sizes.
-            frame_sizes = [len(f) if isinstance(f, str) else 0 for f in frames]
-            total_bytes = sum(frame_sizes)
-
             try:
-                SESSION_MANAGER.validate_and_count_chunk(
-                    session_id=session_id,
-                    n_frames=n,
-                    total_chunk_bytes=total_bytes,
-                    frame_sizes=frame_sizes,
-                )
+                n_ingested, total_bytes = SESSION_MANAGER.ingest_chunk_base64(session_id=session_id, frames_b64=frames)
             except ValueError as e:
                 print(f"[WS] guardrail_triggered session_id={session_id} err={str(e)}")
                 await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
                 await websocket.close(code=4400)
                 return
 
+            # Ack per chunk (echo declared n if present; otherwise use ingested count)
+            n_ack = n_declared if isinstance(n_declared, int) else n_ingested
+            await websocket.send_text(json.dumps({"type": "ack", "chunk_seq": chunk_seq, "received": n_ack}))
+
             s2 = SESSION_MANAGER.get(session_id)
             print(
-                f"[WS] chunk session_id={session_id} chunk_seq={chunk_seq} n={n} bytes~={total_bytes} totals: frames={s2.frames_received if s2 else '?'} chunks={s2.chunks_received if s2 else '?'}"
+                f"[WS] chunk session_id={session_id} chunk_seq={chunk_seq} n_ingested={n_ingested} bytes={total_bytes} totals: frames={s2.frames_received if s2 else '?'} chunks={s2.chunks_received if s2 else '?'}"
             )
 
-            # Ack per chunk
-            await websocket.send_text(json.dumps({"type": "ack", "chunk_seq": chunk_seq, "received": n}))
-
-            # Automatic finalize by time (only when a message arrives)
+            # Optional automatic finalize by time (only when a message arrives)
             elapsed = time.time() - started_at
             if elapsed >= s.capture_seconds:
                 await _finalize(reason="elapsed")
