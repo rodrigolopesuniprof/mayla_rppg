@@ -1,0 +1,111 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 50% 96%;
+    --foreground: 16 30% 13%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 16 30% 13%;
+
+    --popover: 30 50% 96%;
+    --popover-foreground: 16 30% 13%;
+
+    --primary: 5 72% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 25% 87%;
+    --secondary-foreground: 16 22% 39%;
+
+    --muted: 30 25% 87%;
+    --muted-foreground: 16 15% 55%;
+
+    --accent: 152 42% 49%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 5 72% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 30 20% 80%;
+    --input: 30 20% 80%;
+    --ring: 5 72% 60%;
+
+    --radius: 1rem;
+
+    /* Mayla custom tokens */
+    --rose: 5 78% 60%;
+    --rose-lt: 8 84% 70%;
+    --peach: 22 86% 74%;
+    --cream: 30 50% 96%;
+    --sand: 30 25% 87%;
+    --bark: 16 22% 39%;
+    --ink: 16 30% 13%;
+    --mayla-muted: 16 15% 55%;
+    --green: 152 42% 49%;
+    --amber: 43 87% 55%;
+    --teal: 177 47% 48%;
+
+    --font-display: 'Fraunces', serif;
+    --font-body: 'DM Sans', sans-serif;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    margin: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+  }
+}
+
+/* Mayla animations */
+@keyframes morph {
+  from {
+    border-radius: 60% 40% 55% 45% / 50% 60% 40% 50%;
+  }
+  to {
+    border-radius: 40% 60% 45% 55% / 60% 40% 60% 40%;
+  }
+}
+
+@keyframes pulse-border {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(232, 87, 74, 0.4), 0 0 0 8px rgba(232, 87, 74, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(232, 87, 74, 0.2), 0 0 0 14px rgba(232, 87, 74, 0.05);
+  }
+}
+
+@keyframes scan {
+  0% {
+    top: 25%;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    top: 75%;
+    opacity: 0;
+  }
+}
