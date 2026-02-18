@@ -13,6 +13,12 @@ export type SessionResultMessage = {
   face_detect_rate: number;
   snr_db: number | null;
   bpm_series?: number[];
+
+  // Mayla extra metrics
+  rr_bpm?: number | null;
+  prq?: number | null;
+  hrv_sdnn_ms?: number | null;
+  stress_level?: number | null;
 };
 
 export type WsServerMessage = AckMessage | SessionResultMessage | { type: 'error'; message: string };
