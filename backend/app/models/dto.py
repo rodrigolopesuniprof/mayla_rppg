@@ -50,3 +50,9 @@ class SessionResult(BaseModel):
     face_detect_rate: float
     snr_db: Optional[float] = None
     bpm_series: Optional[List[float]] = None
+
+    # Mayla extra metrics
+    rr_bpm: Optional[float] = None
+    prq: Optional[float] = None
+    hrv_sdnn_ms: Optional[float] = None
+    stress_level: Optional[float] = None

@@ -227,6 +227,13 @@ class SessionManager:
         confidence = 0.6 if s.frames_received >= max(10, int(s.capture_seconds * s.target_fps * 0.6)) else 0.35
         quality = "good" if confidence >= 0.6 else "medium"
 
+        # Plausible Mayla extra metrics
+        rr_bpm = 12.0 + float(seed % 7)  # 12..18
+        prq = float(bpm) / float(rr_bpm)
+        hrv_sdnn_ms = 40.0 + float(seed % 51)  # 40..90
+        # Keep stress in a plausible range; lower when confidence is higher
+        stress_level = max(1.0, min(30.0, 5.0 + (1.0 - confidence) * 18.0 + max(0.0, (bpm - 75) * 0.25)))
+
         return {
             "bpm": float(bpm),
             "confidence": float(confidence),
@@ -237,6 +244,10 @@ class SessionManager:
             "face_detect_rate": 1.0,
             "snr_db": 12.0 if quality == "good" else 6.0,
             "bpm_series": None,
+            "rr_bpm": float(rr_bpm),
+            "prq": float(prq),
+            "hrv_sdnn_ms": float(hrv_sdnn_ms),
+            "stress_level": float(stress_level),
         }
 
     def finalize_real(self, session_id: str) -> dict:
@@ -265,6 +276,10 @@ class SessionManager:
             "face_detect_rate": 0.0,
             "snr_db": None,
             "bpm_series": None,
+            "rr_bpm": None,
+            "prq": None,
+            "hrv_sdnn_ms": None,
+            "stress_level": None,
         }
 
         adapter_out: Optional[dict] = None
@@ -303,6 +318,10 @@ class SessionManager:
             result["message"] = adapter_out.get("message")
             result["face_detect_rate"] = float(adapter_out.get("face_detect_rate", 0.0) or 0.0)
             result["bpm_series"] = adapter_out.get("bpm_series")
+
+            # Mayla extra metrics
+            for k in ("rr_bpm", "prq", "hrv_sdnn_ms", "stress_level"):
+                result[k] = adapter_out.get(k)
 
             # Prefer adapter snr_db (if available), else keep old derivation for backward compatibility
             if isinstance(adapter_out.get("snr_db"), (int, float)):

@@ -10,7 +10,7 @@ import numpy as np
 # MediaPipe is used only for face ROI detection; this module is otherwise independent of FastAPI.
 import mediapipe as mp
 
-from scipy.signal import butter, filtfilt, welch
+from scipy.signal import butter, filtfilt, welch, find_peaks
 from scipy.stats import median_abs_deviation
 
 # pyVHR methods (local package in this repo)
@@ -40,6 +40,22 @@ class _Roi:
 # Default: refresh ROI every N frames (can be tuned later by the caller via config
 # if we decide to extend the signature).
 _ROI_REFRESH_INTERVAL = 3
+
+
+def _bandpass_1d(x: np.ndarray, fps: float, min_hz: float, max_hz: float, order: int = 4) -> np.ndarray:
+    if x.size < 10 or fps <= 0:
+        return x.astype(np.float32)
+    nyq = fps / 2.0
+    lo = max(1e-6, min_hz / nyq)
+    hi = min(0.999, max_hz / nyq)
+    if hi <= lo:
+        return x.astype(np.float32)
+    b, a = butter(order, [lo, hi], btype="band")
+    return filtfilt(b, a, x).astype(np.float32)
+
+
+def _clamp(n: float, a: float, b: float) -> float:
+    return float(max(a, min(b, n)))
 
 
 def _bandpass_bvp(bvp: np.ndarray, fps: float, min_hz: float = 0.65, max_hz: float = 4.0, order: int = 4) -> np.ndarray:
@@ -155,6 +171,11 @@ def process_rppg_signal(
         # Extra fields for backend-only diagnostics/metrics (safe for callers to ignore)
         "timings_ms": {"roi": 0.0, "pos": 0.0, "welch": 0.0, "total": 0.0},
         "snr_db": None,
+        # New Mayla metrics
+        "rr_bpm": None,
+        "prq": None,
+        "hrv_sdnn_ms": None,
+        "stress_level": None,
     }
 
     out: Dict[str, Any] = base_result
@@ -315,6 +336,68 @@ def process_rppg_signal(
         if quality == "poor":
             msg = "Qualidade baixa. Repita com melhor iluminação e menos movimento."
 
+        # --- Mayla extra metrics (RR / HRV-SDNN / PRQ / Stress) ---
+        rr_bpm: Optional[float] = None
+        try:
+            # Prefer green channel; fallback to luminance if needed.
+            resp_src = sig[:, 1].astype(np.float32)
+            if not np.isfinite(resp_src).all():
+                resp_src = (0.299 * sig[:, 0] + 0.587 * sig[:, 1] + 0.114 * sig[:, 2]).astype(np.float32)
+
+            if resp_src.size >= int(10 * fps):
+                resp_src = resp_src - float(np.median(resp_src))
+                resp_f = _bandpass_1d(resp_src, fps=float(fps), min_hz=0.10, max_hz=0.50, order=4)
+
+                nperseg_r = min(256, resp_f.size)
+                noverlap_r = int(0.8 * nperseg_r)
+                freqs_r, psd_r = welch(resp_f, fs=float(fps), nperseg=nperseg_r, noverlap=noverlap_r, nfft=2048)
+
+                band_r = (freqs_r >= 0.10) & (freqs_r <= 0.50)
+                if np.any(band_r):
+                    freqs_rb = freqs_r[band_r]
+                    psd_rb = psd_r[band_r]
+                    if psd_rb.size > 0 and float(np.sum(psd_rb)) > 1e-10:
+                        peak_i = int(np.argmax(psd_rb))
+                        rr_hz = float(freqs_rb[peak_i])
+                        rr = rr_hz * 60.0
+                        if 6.0 <= rr <= 30.0:
+                            rr_bpm = float(rr)
+        except Exception:
+            rr_bpm = None
+
+        hrv_sdnn_ms: Optional[float] = None
+        try:
+            min_dist = max(1, int(round(float(fps) / 3.0)))
+            prom = float(np.std(bvp_f) * 0.25) if bvp_f.size > 0 else 0.0
+            peaks, _ = find_peaks(bvp_f, distance=min_dist, prominence=prom if prom > 0 else None)
+
+            if peaks is not None and int(peaks.size) >= 12:
+                ibis_s = np.diff(peaks.astype(np.float32)) / float(fps)
+                ibis_ms = ibis_s * 1000.0
+                if ibis_ms.size >= 2 and np.isfinite(ibis_ms).all():
+                    sdnn = float(np.std(ibis_ms, ddof=1))
+                    if 10.0 <= sdnn <= 200.0:
+                        hrv_sdnn_ms = sdnn
+        except Exception:
+            hrv_sdnn_ms = None
+
+        prq: Optional[float] = None
+        if rr_bpm is not None and rr_bpm > 0 and bpm_med is not None and np.isfinite(bpm_med):
+            prq = float(bpm_med) / float(rr_bpm)
+
+        # Stress: 1..30 (lower is better)
+        try:
+            if hrv_sdnn_ms is not None:
+                sdnn_norm = _clamp((float(hrv_sdnn_ms) - 20.0) / 100.0, 0.0, 1.0)
+                stability = _clamp(0.5 * float(snr_score) + 0.5 * sdnn_norm, 0.0, 1.0)
+            else:
+                stability = _clamp(float(snr_score), 0.0, 1.0)
+
+            stress_level = 5.0 + (1.0 - stability) * 22.0 + max(0.0, (float(bpm_med) - 75.0) * 0.25)
+            stress_level = _clamp(stress_level, 1.0, 30.0)
+        except Exception:
+            stress_level = None
+
         out = {
             "bpm": float(bpm_med),
             "confidence": confidence,
@@ -324,6 +407,10 @@ def process_rppg_signal(
             "face_detect_rate": float(face_detect_rate),
             "bpm_series": [float(x) for x in bpm_series],
             "message": msg,
+            "rr_bpm": rr_bpm,
+            "prq": prq,
+            "hrv_sdnn_ms": hrv_sdnn_ms,
+            "stress_level": stress_level,
             "timings_ms": {
                 "roi": float(t_roi_ms),
                 "pos": float(t_pos_ms),

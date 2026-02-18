@@ -51,6 +51,10 @@ async def ws_session(websocket: WebSocket, session_id: str):
             "face_detect_rate": 0.0,
             "snr_db": None,
             "bpm_series": None,
+            "rr_bpm": None,
+            "prq": None,
+            "hrv_sdnn_ms": None,
+            "stress_level": None,
         }
 
     async def _finalize(reason: str):
