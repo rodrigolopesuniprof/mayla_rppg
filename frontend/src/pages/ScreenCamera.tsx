@@ -116,122 +116,124 @@ export default function ScreenCamera() {
   const globalError = webcam.error || rppg.error;
 
   return (
-    <div className="flex flex-col min-h-screen" style={{ background: '#0F0B09' }}>
-      <AppBar showBack dark />
+    <div className="min-h-screen" style={{ background: '#0F0B09' }}>
+      <div className="max-w-[420px] mx-auto flex flex-col min-h-screen" style={{ background: '#0F0B09' }}>
+        <AppBar showBack dark />
 
-      <div className="flex-1 relative flex items-center justify-center overflow-hidden">
-        <div
-          className="absolute inset-0"
-          style={{ background: 'radial-gradient(ellipse at center, #2a1e1a 0%, #0a0806 100%)' }}
-        />
-
-        {/* Camera */}
-        <video
-          ref={webcam.videoRef as any}
-          autoPlay
-          playsInline
-          muted
-          className="absolute inset-0 w-full h-full object-cover opacity-60"
-        />
-
-        {/* Face oval */}
-        <div
-          className="relative z-[2] w-[180px] h-[220px] rounded-full border-2 flex items-center justify-center"
-          style={{
-            borderColor: 'rgba(232,87,74,.7)',
-            animation: 'pulse-border 2s ease-in-out infinite',
-          }}
-        >
-          <div className="absolute -top-px -left-px w-6 h-6 border-rose border-t-[3px] border-l-[3px] rounded-tl" />
-          <div className="absolute -top-px -right-px w-6 h-6 border-rose border-t-[3px] border-r-[3px] rounded-tr" />
-          <div className="absolute -bottom-px -left-px w-6 h-6 border-rose border-b-[3px] border-l-[3px] rounded-bl" />
-          <div className="absolute -bottom-px -right-px w-6 h-6 border-rose border-b-[3px] border-r-[3px] rounded-br" />
-
+        <div className="flex-1 relative flex items-center justify-center overflow-hidden">
           <div
-            className="absolute w-[140px] h-[1.5px] z-[3]"
-            style={{
-              background: 'linear-gradient(to right, transparent, hsl(var(--rose-lt)), transparent)',
-              animation: 'scan 2.5s ease-in-out infinite',
-            }}
+            className="absolute inset-0"
+            style={{ background: 'radial-gradient(ellipse at center, #2a1e1a 0%, #0a0806 100%)' }}
           />
-        </div>
 
-        <p className="absolute bottom-6 left-0 right-0 text-center text-white/60 text-xs tracking-wide z-[4]">
-          Mantenha o rosto enquadrado e imóvel
-        </p>
+          {/* Camera */}
+          <video
+            ref={webcam.videoRef as any}
+            autoPlay
+            playsInline
+            muted
+            className="absolute inset-0 w-full h-full object-cover opacity-60"
+          />
 
-        {globalError ? (
-          <div className="absolute top-24 left-5 right-5 z-[5] bg-white/10 border border-white/20 text-white rounded-2xl p-3 text-sm">
-            {globalError}
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        className="relative z-10 px-6 pt-4 pb-7"
-        style={{ background: 'linear-gradient(to top, rgba(10,8,6,.98), transparent)' }}
-      >
-        <div className="flex justify-center mb-4">
-          <div className="relative w-[68px] h-[68px]">
-            <svg width="68" height="68" className="-rotate-90">
-              <circle cx="34" cy="34" r="28" fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="4" />
-              <circle
-                cx="34"
-                cy="34"
-                r="28"
-                fill="none"
-                stroke="hsl(var(--rose))"
-                strokeWidth="4"
-                strokeLinecap="round"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-                className="transition-all duration-1000"
-              />
-            </svg>
-            <div className="absolute inset-0 flex items-center justify-center font-display text-xl font-bold text-white">
-              {seconds}s
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-center gap-5">
-          <div className="text-center">
-            <div className="font-display text-[22px] text-white font-medium">
-              —<span className="text-sm text-white/60">bpm</span>
-            </div>
-            <div className="text-[10px] text-white/45 tracking-wider uppercase mt-0.5 flex items-center gap-1">
-              ❤️ BPM
-            </div>
-          </div>
-          <div className="w-px bg-white/10 self-stretch" />
-          <div className="text-center">
-            <div className="font-display text-[22px] text-white font-medium">
-              —<span className="text-sm text-white/60">brpm</span>
-            </div>
-            <div className="text-[10px] text-white/45 tracking-wider uppercase mt-0.5 flex items-center gap-1">
-              🫁 RR
-            </div>
-          </div>
-          <div className="w-px bg-white/10 self-stretch" />
-          <div className="text-center">
-            <div className="font-display text-[22px] text-white font-medium">—</div>
-            <div className="text-[10px] text-white/45 tracking-wider uppercase mt-0.5 flex items-center gap-1">
-              💜 HRV
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-5 flex justify-center">
-          <button
-            className="px-4 py-2 rounded-2xl bg-white/10 text-white/90 border border-white/15 text-sm"
-            onClick={() => {
-              rppg.stop();
-              webcam.stop();
-              navigate('/');
+          {/* Face oval */}
+          <div
+            className="relative z-[2] w-[180px] h-[220px] rounded-full border-2 flex items-center justify-center"
+            style={{
+              borderColor: 'rgba(232,87,74,.7)',
+              animation: 'pulse-border 2s ease-in-out infinite',
             }}
           >
-            Parar
-          </button>
+            <div className="absolute -top-px -left-px w-6 h-6 border-rose border-t-[3px] border-l-[3px] rounded-tl" />
+            <div className="absolute -top-px -right-px w-6 h-6 border-rose border-t-[3px] border-r-[3px] rounded-tr" />
+            <div className="absolute -bottom-px -left-px w-6 h-6 border-rose border-b-[3px] border-l-[3px] rounded-bl" />
+            <div className="absolute -bottom-px -right-px w-6 h-6 border-rose border-b-[3px] border-r-[3px] rounded-br" />
+
+            <div
+              className="absolute w-[140px] h-[1.5px] z-[3]"
+              style={{
+                background: 'linear-gradient(to right, transparent, hsl(var(--rose-lt)), transparent)',
+                animation: 'scan 2.5s ease-in-out infinite',
+              }}
+            />
+          </div>
+
+          <p className="absolute bottom-6 left-0 right-0 text-center text-white/60 text-xs tracking-wide z-[4]">
+            Mantenha o rosto enquadrado e imóvel
+          </p>
+
+          {globalError ? (
+            <div className="absolute top-24 left-5 right-5 z-[5] bg-white/10 border border-white/20 text-white rounded-2xl p-3 text-sm">
+              {globalError}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className="relative z-10 px-6 pt-4 pb-7"
+          style={{ background: 'linear-gradient(to top, rgba(10,8,6,.98), transparent)' }}
+        >
+          <div className="flex justify-center mb-4">
+            <div className="relative w-[68px] h-[68px]">
+              <svg width="68" height="68" className="-rotate-90">
+                <circle cx="34" cy="34" r="28" fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="4" />
+                <circle
+                  cx="34"
+                  cy="34"
+                  r="28"
+                  fill="none"
+                  stroke="hsl(var(--rose))"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  className="transition-all duration-1000"
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center font-display text-xl font-bold text-white">
+                {seconds}s
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-center gap-5">
+            <div className="text-center">
+              <div className="font-display text-[22px] text-white font-medium">
+                —<span className="text-sm text-white/60">bpm</span>
+              </div>
+              <div className="text-[10px] text-white/45 tracking-wider uppercase mt-0.5 flex items-center gap-1">
+                ❤️ BPM
+              </div>
+            </div>
+            <div className="w-px bg-white/10 self-stretch" />
+            <div className="text-center">
+              <div className="font-display text-[22px] text-white font-medium">
+                —<span className="text-sm text-white/60">brpm</span>
+              </div>
+              <div className="text-[10px] text-white/45 tracking-wider uppercase mt-0.5 flex items-center gap-1">
+                🫁 RR
+              </div>
+            </div>
+            <div className="w-px bg-white/10 self-stretch" />
+            <div className="text-center">
+              <div className="font-display text-[22px] text-white font-medium">—</div>
+              <div className="text-[10px] text-white/45 tracking-wider uppercase mt-0.5 flex items-center gap-1">
+                💜 HRV
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 flex justify-center">
+            <button
+              className="px-4 py-2 rounded-2xl bg-white/10 text-white/90 border border-white/15 text-sm"
+              onClick={() => {
+                rppg.stop();
+                webcam.stop();
+                navigate('/');
+              }}
+            >
+              Parar
+            </button>
+          </div>
         </div>
       </div>
     </div>
