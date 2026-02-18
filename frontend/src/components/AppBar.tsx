@@ -2,10 +2,6 @@ import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
-// Logos oficiais (coloque os PNGs em frontend/src/assets/ com estes nomes)
-import logoDark from '../assets/logo-mayla-dark.png';
-import logoWhite from '../assets/logo-mayla-white.png';
-
 interface AppBarProps {
   showBack?: boolean;
   dark?: boolean;
@@ -13,7 +9,13 @@ interface AppBarProps {
 }
 
 const MaylaLogo = ({ dark }: { dark?: boolean }) => (
-  <img src={dark ? logoWhite : logoDark} alt="Mayla Saúde" className="h-8 w-auto object-contain" />
+  // Logos oficiais: coloque os PNGs em frontend/public com estes nomes.
+  // (Neste ambiente, não consigo materializar binários PNG diretamente em src/assets via código.)
+  <img
+    src={dark ? '/logo-mayla-white.png' : '/logo-mayla-dark.png'}
+    alt="Mayla Saúde"
+    className="h-8 w-auto object-contain"
+  />
 );
 
 const AppBar = ({ showBack, dark, rightIcon }: AppBarProps) => {
