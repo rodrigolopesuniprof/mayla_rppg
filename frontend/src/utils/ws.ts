@@ -18,15 +18,18 @@ export type SessionResultMessage = {
 export type WsServerMessage = AckMessage | SessionResultMessage | { type: 'error'; message: string };
 
 export function getApiBase(): string {
-  return (import.meta as any).env?.VITE_API_BASE ?? 'http://localhost:8000';
+  // In Dyad/dev preview, calling http://localhost:8000 from the browser often fails.
+  // Prefer same-origin relative calls so Vite's proxy can forward to the backend.
+  return (import.meta as any).env?.VITE_API_BASE ?? '';
 }
 
 export function getWsBase(): string {
+  // Prefer same-origin WS so Vite's proxy can upgrade/forward to the backend.
   const env = (import.meta as any).env?.VITE_WS_BASE;
   if (env) return env;
 
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//localhost:8000`;
+  return `${proto}//${window.location.host}`;
 }
 
 export class RppgWebSocketClient {
