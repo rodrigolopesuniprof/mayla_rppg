@@ -43,14 +43,19 @@
 }
 
 @layer base {
+  /* Avoid @apply to custom tokens (Tailwind v4 requires config resolution via @reference).
+     Keep this as plain CSS to prevent build errors. */
   * {
-    @apply border-border;
+    border-color: hsl(var(--border));
   }
+
   body {
-    @apply bg-background text-foreground;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
     font-family: var(--font-body);
     margin: 0;
   }
+
   h1,
   h2,
   h3,
