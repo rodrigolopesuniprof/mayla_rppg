@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k -n frontend,backend -c cyan,magenta \"vite\" \"python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000\"",
     "build": "vite build",
     "preview": "vite preview"
   },
