@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Request, HTTPException
+from pydantic import BaseModel
 
 from ..models.dto import SessionEndReq, SessionEndResp, SessionParams, SessionStartReq
 from ..services.rppg_service import SESSION_MANAGER
@@ -35,6 +36,37 @@ def start_session(req: SessionStartReq, request: Request):
         max_chunk_size=s.max_chunk_size,
         mock_mode=DEFAULTS.mock_mode,
     )
+
+
+class _ChunkReq(BaseModel):
+    chunk_seq: int
+    n: int
+    frames: list[str]
+
+
+@router.post("/{session_id}/chunk")
+def ingest_chunk(session_id: str, req: _ChunkReq):
+    try:
+        n_ingested, _ = SESSION_MANAGER.ingest_chunk_base64(session_id=session_id, frames_b64=req.frames)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Keep response compatible with the WS ack structure
+    return {"type": "ack", "chunk_seq": int(req.chunk_seq), "received": int(n_ingested)}
+
+
+@router.post("/{session_id}/end")
+def finalize_session(session_id: str):
+    try:
+        out = SESSION_MANAGER.finalize_session(session_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        # always cleanup
+        SESSION_MANAGER.end_session(session_id)
+
+    out["type"] = "result"
+    return out
 
 
 @router.post("/end", response_model=SessionEndResp)

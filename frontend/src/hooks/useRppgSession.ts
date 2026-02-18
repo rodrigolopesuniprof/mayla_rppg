@@ -1,11 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { captureJpegFrame } from '../utils/image';
-import {
-  getWsBase,
-  RppgWebSocketClient,
-  SessionResultMessage,
-  WsServerMessage,
-} from '../utils/ws';
+import { getApiBase, type SessionResultMessage } from '../utils/ws';
 
 export type UseRppgSessionOpts = {
   sessionId: string;
@@ -54,7 +49,6 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     onFaceDetected,
   } = opts;
 
-  const clientRef = useRef<RppgWebSocketClient | null>(null);
   const captureIntervalRef = useRef<number | null>(null);
   const chunkIntervalRef = useRef<number | null>(null);
   const timerIntervalRef = useRef<number | null>(null);
@@ -64,6 +58,8 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
   const lastSendAtRef = useRef<number>(0);
 
   const ackedChunkSeqRef = useRef<number>(-1);
+  const inFlightChunkRef = useRef(false);
+  const stoppedRef = useRef(false);
 
   const [state, setState] = useState<State>({
     isCapturing: false,
@@ -83,18 +79,14 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     timerIntervalRef.current = null;
   }, []);
 
-  const disconnect = useCallback(() => {
-    clientRef.current?.close();
-    clientRef.current = null;
-  }, []);
-
   const reset = useCallback(() => {
     cleanupTimers();
-    disconnect();
     pendingFramesRef.current = [];
     chunkSeqRef.current = 0;
     ackedChunkSeqRef.current = -1;
     lastSendAtRef.current = 0;
+    inFlightChunkRef.current = false;
+    stoppedRef.current = false;
     setState({
       isCapturing: false,
       secondsElapsed: 0,
@@ -103,91 +95,90 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       lastAckChunkSeq: null,
       error: null,
     });
-  }, [cleanupTimers, disconnect]);
+  }, [cleanupTimers]);
 
-  const handleServerMessage = useCallback(
-    (msg: WsServerMessage) => {
-      if ((msg as any)?.type === 'ack') {
-        const ack = msg as any as { chunk_seq: number };
-        ackedChunkSeqRef.current = Math.max(ackedChunkSeqRef.current, ack.chunk_seq);
-        setState((s) => ({ ...s, lastAckChunkSeq: ack.chunk_seq }));
-        return;
+  const postChunkOnce = useCallback(async () => {
+    if (inFlightChunkRef.current) return;
+    if (pendingFramesRef.current.length === 0) return;
+
+    const sid = sessionId;
+    if (!sid) {
+      setState((s) => ({ ...s, error: 'Sessão inválida. Inicie novamente.' }));
+      return;
+    }
+
+    const frames = pendingFramesRef.current.splice(0, maxChunkSize);
+    if (frames.length === 0) return;
+
+    const chunk_seq = chunkSeqRef.current++;
+    const payload = {
+      chunk_seq,
+      ts_start_ms: Date.now(),
+      fps_est: frames.length,
+      width,
+      height,
+      n: frames.length,
+      frames: frames.map(toBase64),
+    };
+
+    inFlightChunkRef.current = true;
+    try {
+      const resp = await fetch(`${getApiBase()}/sessions/${encodeURIComponent(sid)}/chunk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(txt || `HTTP ${resp.status}`);
       }
 
-      if ((msg as any)?.type === 'chunk_signal') {
-        const face = Boolean((msg as any).face_detected);
-        onFaceDetected?.(face);
-        return;
-      }
+      const ack = (await resp.json()) as { chunk_seq: number; received: number };
+      ackedChunkSeqRef.current = Math.max(ackedChunkSeqRef.current, ack.chunk_seq);
 
-      if ((msg as any)?.bpm !== undefined && (msg as any)?.quality) {
-        onResult(msg as any as SessionResultMessage);
-        // After result, we can close any remaining resources.
-        cleanupTimers();
-        setState((s) => ({ ...s, isCapturing: false }));
-        disconnect();
-        return;
-      }
-
-      if ((msg as any)?.type === 'error') {
-        setState((s) => ({ ...s, error: (msg as any).message ?? 'Erro no servidor' }));
-      }
-    },
-    [cleanupTimers, disconnect, onResult, onFaceDetected],
-  );
-
-  const connect = useCallback(
-    async (sid: string) => {
-      const url = `${getWsBase()}/ws/sessions/${encodeURIComponent(sid)}`;
-      const client = new RppgWebSocketClient(
-        url,
-        handleServerMessage,
-        () => setState((s) => ({ ...s, error: s.isCapturing ? 'Conexão perdida.' : s.error })),
-        () => setState((s) => ({ ...s, error: 'Erro na conexão WebSocket.' })),
-      );
-      clientRef.current = client;
-      await client.connect();
-    },
-    [handleServerMessage],
-  );
-
-  // User-initiated stop: stop capture AND close socket
-  const stop = useCallback(() => {
-    cleanupTimers();
-    setState((s) => ({ ...s, isCapturing: false }));
-    disconnect();
-  }, [cleanupTimers, disconnect]);
-
-  const flushPendingFramesOnce = useCallback(() => {
-    const client = clientRef.current;
-    if (!client || !client.isOpen()) return;
-
-    while (pendingFramesRef.current.length > 0) {
-      const frames = pendingFramesRef.current.splice(0, maxChunkSize);
-      const chunk_seq = chunkSeqRef.current++;
-      const payload = {
-        chunk_seq,
-        ts_start_ms: Date.now(),
-        fps_est: frames.length,
-        width,
-        height,
-        n: frames.length,
-        frames: frames.map(toBase64),
-      };
-      client.sendJson(payload);
       setState((s) => ({
         ...s,
         chunksSent: s.chunksSent + 1,
         framesSent: s.framesSent + frames.length,
+        lastAckChunkSeq: ack.chunk_seq,
       }));
-    }
-  }, [height, maxChunkSize, width]);
 
-  const sendEnd = useCallback(() => {
-    const client = clientRef.current;
-    if (!client || !client.isOpen()) return;
-    client.sendJson({ type: 'end' });
-  }, []);
+      // We don't currently compute face detection progress in HTTP mode.
+      onFaceDetected?.(true);
+    } catch (e: any) {
+      // Put frames back so user can retry without losing capture entirely.
+      pendingFramesRef.current.unshift(...frames);
+      setState((s) => ({ ...s, error: e?.message ?? 'Falha ao enviar chunk' }));
+    } finally {
+      inFlightChunkRef.current = false;
+    }
+  }, [height, maxChunkSize, onFaceDetected, sessionId, width]);
+
+  const finalize = useCallback(async () => {
+    const sid = sessionId;
+    if (!sid) return;
+    try {
+      const resp = await fetch(`${getApiBase()}/sessions/${encodeURIComponent(sid)}/end`, {
+        method: 'POST',
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(txt || `HTTP ${resp.status}`);
+      }
+      const result = (await resp.json()) as SessionResultMessage;
+      onResult(result);
+    } catch (e: any) {
+      setState((s) => ({ ...s, error: e?.message ?? 'Falha ao finalizar sessão' }));
+    }
+  }, [onResult, sessionId]);
+
+  // User-initiated stop
+  const stop = useCallback(() => {
+    stoppedRef.current = true;
+    cleanupTimers();
+    setState((s) => ({ ...s, isCapturing: false }));
+  }, [cleanupTimers]);
 
   const start = useCallback(
     async (sessionIdOverride?: string) => {
@@ -206,22 +197,14 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       reset();
       setState((s) => ({ ...s, isCapturing: true, error: null }));
 
-      try {
-        await connect(sid);
-      } catch {
-        setState((s) => ({ ...s, isCapturing: false, error: 'Falha ao conectar no servidor.' }));
-        return;
-      }
-
+      // Capture loop
       const captureEveryMs = Math.max(80, Math.floor(1000 / Math.max(1, targetFps)));
-
-      // Capture loop (throttled)
       captureIntervalRef.current = window.setInterval(async () => {
         const v = videoRef.current;
         if (!v) return;
-        if (!clientRef.current?.isOpen()) return;
-        const now = Date.now();
+        if (stoppedRef.current) return;
 
+        const now = Date.now();
         const ackLag = chunkSeqRef.current - (ackedChunkSeqRef.current + 1);
         if (ackLag > 2) return;
         if (now - lastSendAtRef.current < captureEveryMs - 5) return;
@@ -237,76 +220,48 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
           });
           pendingFramesRef.current.push(jpeg);
         } catch {
-          // ignore occasional frame failures
+          // ignore
         }
       }, Math.max(30, Math.floor(captureEveryMs / 2)));
 
       // Chunk send loop (every 1s)
       chunkIntervalRef.current = window.setInterval(() => {
-        const client = clientRef.current;
-        if (!client || !client.isOpen()) return;
-
-        const frames = pendingFramesRef.current.splice(0, maxChunkSize);
-        if (frames.length === 0) return;
-
-        const chunk_seq = chunkSeqRef.current++;
-        const payload = {
-          chunk_seq,
-          ts_start_ms: Date.now(),
-          fps_est: frames.length,
-          width,
-          height,
-          n: frames.length,
-          frames: frames.map(toBase64),
-        };
-
-        try {
-          client.sendJson(payload);
-          setState((s) => ({
-            ...s,
-            chunksSent: s.chunksSent + 1,
-            framesSent: s.framesSent + frames.length,
-          }));
-        } catch (e: any) {
-          setState((s) => ({ ...s, error: e?.message ?? 'Falha ao enviar chunk' }));
-        }
+        void postChunkOnce();
       }, 1000);
 
-      // Timer: at the end, do NOT close the socket.
-      // We flush remaining frames and send an explicit {type:'end'} so the backend finalizes.
+      // Timer: at the end, flush and finalize
       const startedAt = Date.now();
       timerIntervalRef.current = window.setInterval(() => {
         const elapsed = (Date.now() - startedAt) / 1000;
         setState((s) => ({ ...s, secondsElapsed: Math.floor(elapsed) }));
+
         if (elapsed >= captureSeconds) {
-          // stop capture loops, but keep WS open until result arrives
           if (captureIntervalRef.current) window.clearInterval(captureIntervalRef.current);
           if (chunkIntervalRef.current) window.clearInterval(chunkIntervalRef.current);
+          if (timerIntervalRef.current) window.clearInterval(timerIntervalRef.current);
           captureIntervalRef.current = null;
           chunkIntervalRef.current = null;
-          if (timerIntervalRef.current) window.clearInterval(timerIntervalRef.current);
           timerIntervalRef.current = null;
 
           setState((s) => ({ ...s, isCapturing: false }));
 
-          try {
-            flushPendingFramesOnce();
-            sendEnd();
-          } catch {
-            // ignore
-          }
+          // Send remaining frames and then finalize.
+          void (async () => {
+            await postChunkOnce();
+            // If there are still pending frames (large backlog), try a couple more sends.
+            await postChunkOnce();
+            await finalize();
+          })();
         }
       }, 250);
     },
     [
       captureSeconds,
-      connect,
-      flushPendingFramesOnce,
+      finalize,
       height,
       jpegQuality,
-      maxChunkSize,
+      postChunkOnce,
       reset,
-      sendEnd,
       sessionId,
       targetFps,
       videoRef,
@@ -318,9 +273,8 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
   useEffect(() => {
     return () => {
       cleanupTimers();
-      disconnect();
     };
-  }, [cleanupTimers, disconnect]);
+  }, [cleanupTimers]);
 
   return {
     ...state,
