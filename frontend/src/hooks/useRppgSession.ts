@@ -122,6 +122,10 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
 
       if ((msg as any)?.bpm !== undefined && (msg as any)?.quality) {
         onResult(msg as any as SessionResultMessage);
+        // After result, we can close any remaining resources.
+        cleanupTimers();
+        setState((s) => ({ ...s, isCapturing: false }));
+        disconnect();
         return;
       }
 
@@ -129,7 +133,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
         setState((s) => ({ ...s, error: (msg as any).message ?? 'Erro no servidor' }));
       }
     },
-    [onResult, onFaceDetected],
+    [cleanupTimers, disconnect, onResult, onFaceDetected],
   );
 
   const connect = useCallback(
@@ -147,11 +151,43 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     [handleServerMessage],
   );
 
+  // User-initiated stop: stop capture AND close socket
   const stop = useCallback(() => {
     cleanupTimers();
     setState((s) => ({ ...s, isCapturing: false }));
     disconnect();
   }, [cleanupTimers, disconnect]);
+
+  const flushPendingFramesOnce = useCallback(() => {
+    const client = clientRef.current;
+    if (!client || !client.isOpen()) return;
+
+    while (pendingFramesRef.current.length > 0) {
+      const frames = pendingFramesRef.current.splice(0, maxChunkSize);
+      const chunk_seq = chunkSeqRef.current++;
+      const payload = {
+        chunk_seq,
+        ts_start_ms: Date.now(),
+        fps_est: frames.length,
+        width,
+        height,
+        n: frames.length,
+        frames: frames.map(toBase64),
+      };
+      client.sendJson(payload);
+      setState((s) => ({
+        ...s,
+        chunksSent: s.chunksSent + 1,
+        framesSent: s.framesSent + frames.length,
+      }));
+    }
+  }, [height, maxChunkSize, width]);
+
+  const sendEnd = useCallback(() => {
+    const client = clientRef.current;
+    if (!client || !client.isOpen()) return;
+    client.sendJson({ type: 'end' });
+  }, []);
 
   const start = useCallback(
     async (sessionIdOverride?: string) => {
@@ -222,7 +258,6 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
         };
 
         try {
-          // Build 1 backend expects JSON
           client.sendJson(payload);
           setState((s) => ({
             ...s,
@@ -234,25 +269,42 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
         }
       }, 1000);
 
-      // Timer
+      // Timer: at the end, do NOT close the socket.
+      // We flush remaining frames and send an explicit {type:'end'} so the backend finalizes.
       const startedAt = Date.now();
       timerIntervalRef.current = window.setInterval(() => {
         const elapsed = (Date.now() - startedAt) / 1000;
         setState((s) => ({ ...s, secondsElapsed: Math.floor(elapsed) }));
         if (elapsed >= captureSeconds) {
-          stop();
+          // stop capture loops, but keep WS open until result arrives
+          if (captureIntervalRef.current) window.clearInterval(captureIntervalRef.current);
+          if (chunkIntervalRef.current) window.clearInterval(chunkIntervalRef.current);
+          captureIntervalRef.current = null;
+          chunkIntervalRef.current = null;
+          if (timerIntervalRef.current) window.clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+
+          setState((s) => ({ ...s, isCapturing: false }));
+
+          try {
+            flushPendingFramesOnce();
+            sendEnd();
+          } catch {
+            // ignore
+          }
         }
       }, 250);
     },
     [
       captureSeconds,
       connect,
+      flushPendingFramesOnce,
       height,
       jpegQuality,
       maxChunkSize,
       reset,
+      sendEnd,
       sessionId,
-      stop,
       targetFps,
       videoEl,
       width,

@@ -27,7 +27,6 @@ async def ws_session(websocket: WebSocket, session_id: str):
     if not s:
         print(f"[WS] invalid session_id={session_id} (not found/expired)")
         await websocket.send_text(json.dumps({"type": "error", "message": "session_not_found_or_expired"}))
-        # keep it explicit; client sees the error
         await websocket.close(code=4404)
         return
 
@@ -36,6 +35,15 @@ async def ws_session(websocket: WebSocket, session_id: str):
     print(
         f"[WS] session started session_id={session_id} capture_seconds={s.capture_seconds} max_chunk_size={s.max_chunk_size}"
     )
+
+    async def _finalize(reason: str):
+        elapsed = time.time() - started_at
+        result = SESSION_MANAGER.finalize_mock(session_id)
+        result["type"] = "result"
+        print(f"[WS] finalize session_id={session_id} reason={reason} elapsed={elapsed:.2f}s result={result}")
+        await websocket.send_text(json.dumps(result))
+        await websocket.close(code=1000)
+        SESSION_MANAGER.end_session(session_id)
 
     try:
         while True:
@@ -47,6 +55,11 @@ async def ws_session(websocket: WebSocket, session_id: str):
                 print(f"[WS] invalid_json session_id={session_id}")
                 await websocket.send_text(json.dumps({"type": "error", "message": "invalid_json"}))
                 continue
+
+            # Explicit end event from client
+            if payload.get("type") == "end":
+                await _finalize(reason="client_end")
+                return
 
             frames = payload.get("frames")
             n = payload.get("n")
@@ -88,20 +101,14 @@ async def ws_session(websocket: WebSocket, session_id: str):
             # Ack per chunk
             await websocket.send_text(json.dumps({"type": "ack", "chunk_seq": chunk_seq, "received": n}))
 
-            # Finalize after capture_seconds since start
+            # Automatic finalize by time (only when a message arrives)
             elapsed = time.time() - started_at
             if elapsed >= s.capture_seconds:
-                result = SESSION_MANAGER.finalize_mock(session_id)
-                print(f"[WS] finalize session_id={session_id} elapsed={elapsed:.2f}s result={result}")
-                await websocket.send_text(json.dumps(result))
-                # Close AFTER sending result
-                await websocket.close(code=1000)
-                SESSION_MANAGER.end_session(session_id)
+                await _finalize(reason="elapsed")
                 return
 
     except WebSocketDisconnect:
         print(f"[WS] disconnect session_id={session_id}")
-        # Client disconnected early: cleanup
         SESSION_MANAGER.end_session(session_id)
         return
     except Exception as e:
