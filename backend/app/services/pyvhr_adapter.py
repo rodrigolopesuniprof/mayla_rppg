@@ -152,7 +152,12 @@ def process_rppg_signal(
         "face_detect_rate": 0.0,
         "bpm_series": None,
         "message": "Medição indisponível.",
+        # Extra fields for backend-only diagnostics/metrics (safe for callers to ignore)
+        "timings_ms": {"roi": 0.0, "pos": 0.0, "welch": 0.0, "total": 0.0},
+        "snr_db": None,
     }
+
+    out: Dict[str, Any] = base_result
 
     t_total0 = time.perf_counter()
     t_roi_ms = 0.0
@@ -232,6 +237,7 @@ def process_rppg_signal(
 
         if face_detect_rate < 0.7:
             base_result["message"] = "Face pouco detectada. Repita com o rosto centralizado e estável."
+            base_result["timings_ms"].update({"roi": float(t_roi_ms), "pos": 0.0, "welch": 0.0})
             return base_result
 
         sig = np.vstack(rgb_means)  # (T, 3)
@@ -242,6 +248,7 @@ def process_rppg_signal(
                 mask = np.isfinite(col)
                 if not np.any(mask):
                     base_result["message"] = "Sinal RGB inválido."
+                    base_result["timings_ms"].update({"roi": float(t_roi_ms), "pos": 0.0, "welch": 0.0})
                     return base_result
                 last = col[np.argmax(mask)]
                 for k in range(col.shape[0]):
@@ -267,6 +274,7 @@ def process_rppg_signal(
 
         if bvp.ndim != 1 or bvp.size < int(max(3, winsize) * fps):
             base_result["message"] = "Sinal BVP insuficiente."
+            base_result["timings_ms"].update({"roi": float(t_roi_ms), "pos": 0.0, "welch": 0.0})
             return base_result
 
         bvp_f = _bandpass_bvp(bvp, fps=float(fps), min_hz=0.65, max_hz=4.0, order=4)
@@ -278,6 +286,7 @@ def process_rppg_signal(
         bpm_series = _estimate_bpm_series(bvp_f, fps=float(fps), winsize=winsize, stride=stride)
         if len(bpm_series) == 0:
             base_result["message"] = "Não foi possível estimar BPM com estabilidade."
+            base_result["timings_ms"].update({"roi": float(t_roi_ms), "pos": float(t_pos_ms), "welch": 0.0})
             return base_result
 
         bpm_med = float(np.median(bpm_series))
@@ -287,13 +296,15 @@ def process_rppg_signal(
         noverlap = int(0.8 * nperseg)
         freqs, psd = welch(bvp_f, fs=float(fps), nperseg=nperseg, noverlap=noverlap, nfft=2048)
         f_peak_hz = bpm_med / 60.0
-        _snr_db, snr_score = _snr_from_psd(freqs, psd, f_peak_hz=f_peak_hz)
+        snr_db, snr_score = _snr_from_psd(freqs, psd, f_peak_hz=f_peak_hz)
         t_welch_ms = (time.perf_counter() - t0) * 1000.0
         print(f"[RPPG] stage=welch elapsed={t_welch_ms:.0f} ms")
 
         base_result["snr_score"] = float(snr_score)
+        base_result["snr_db"] = float(snr_db)
         if snr_score < 0.3:
             base_result["message"] = "Sinal com baixa qualidade (SNR baixo). Repita em melhor iluminação e com menos movimento."
+            base_result["timings_ms"].update({"roi": float(t_roi_ms), "pos": float(t_pos_ms), "welch": float(t_welch_ms)})
             return base_result
 
         stability_score = float(max(0.0, min(1.0, 1.0 - (mad_bpm / 10.0))))
@@ -304,15 +315,23 @@ def process_rppg_signal(
         if quality == "poor":
             msg = "Qualidade baixa. Repita com melhor iluminação e menos movimento."
 
-        return {
+        out = {
             "bpm": float(bpm_med),
             "confidence": confidence,
             "quality": quality,
             "snr_score": float(snr_score),
+            "snr_db": float(snr_db),
             "face_detect_rate": float(face_detect_rate),
             "bpm_series": [float(x) for x in bpm_series],
             "message": msg,
+            "timings_ms": {
+                "roi": float(t_roi_ms),
+                "pos": float(t_pos_ms),
+                "welch": float(t_welch_ms),
+                "total": 0.0,  # filled in finally
+            },
         }
+        return out
 
     except Exception as e:
         base_result["message"] = f"Falha no processamento rPPG: {type(e).__name__}"
@@ -320,4 +339,9 @@ def process_rppg_signal(
 
     finally:
         total_ms = (time.perf_counter() - t_total0) * 1000.0
+        try:
+            if isinstance(out, dict) and isinstance(out.get("timings_ms"), dict):
+                out["timings_ms"]["total"] = float(total_ms)
+        except Exception:
+            pass
         print(f"[RPPG] stage=total elapsed={total_ms:.0f} ms")

@@ -66,6 +66,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
         except Exception:
             pass
 
+        timed_out = False
         try:
             # Hard timeout to avoid hanging WS
             result = await asyncio.wait_for(
@@ -75,11 +76,29 @@ async def ws_session(websocket: WebSocket, session_id: str):
             if not isinstance(result, dict):
                 result = _poor_result(elapsed, "Resultado inválido do processamento.")
         except asyncio.TimeoutError:
+            timed_out = True
             print(f"[WS] finalize timeout session_id={session_id}")
             result = _poor_result(elapsed, "Processamento excedeu o tempo limite. Tente novamente.")
         except Exception as e:
             print(f"[WS] finalize error session_id={session_id} err={repr(e)}")
             result = _poor_result(elapsed, "Falha ao processar a medição.")
+
+        # Log timeout metrics line as well (so you can count timeouts across sessions)
+        if timed_out:
+            try:
+                s2 = SESSION_MANAGER.get(session_id)
+                metrics = {
+                    "session_id": session_id,
+                    "frames_received": int(s2.frames_received if s2 else 0),
+                    "chunks_received": int(s2.chunks_received if s2 else 0),
+                    "bytes_received": int(s2.bytes_received if s2 else 0),
+                    "elapsed_total_ms": int(round(elapsed * 1000.0)),
+                    "quality": "poor",
+                    "timeout": True,
+                }
+                print("[SESSION_METRICS] " + json.dumps(metrics, separators=(",", ":"), ensure_ascii=False))
+            except Exception:
+                pass
 
         # ALWAYS send result
         result["type"] = "result"

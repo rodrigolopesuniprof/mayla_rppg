@@ -13,6 +13,8 @@ from PIL import Image
 from ..config import DEFAULTS
 from . import pyvhr_adapter
 
+import json
+
 
 @dataclass
 class SessionState:
@@ -234,33 +236,44 @@ class SessionManager:
             "bpm_series": None,
         }
 
+        adapter_out: Optional[dict] = None
+        processing_ms: Optional[float] = None
+
         try:
             # Log accumulated decode time (base64->jpeg->rgb) for the session
             print(f"[RPPG] stage=decode elapsed={s.decode_ms_total:.0f} ms")
 
+            t_proc0 = time.perf_counter()
+
             # fps comes from session parameters (as requested)
             fps = float(s.target_fps)
-            out = pyvhr_adapter.process_rppg_signal(
+            adapter_out = pyvhr_adapter.process_rppg_signal(
                 frames=s.frames_rgb,
                 fps=fps,
                 winsize=5,
                 stride=1,
             )
 
-            # Adapter returns: bpm/confidence/quality/snr_score/face_detect_rate/bpm_series/message
-            result["bpm"] = out.get("bpm")
-            result["confidence"] = float(out.get("confidence", 0.0) or 0.0)
-            result["quality"] = out.get("quality") or "poor"
-            result["message"] = out.get("message")
-            result["face_detect_rate"] = float(out.get("face_detect_rate", 0.0) or 0.0)
-            result["bpm_series"] = out.get("bpm_series")
+            processing_ms = (time.perf_counter() - t_proc0) * 1000.0
 
-            # Derive snr_db from snr_score mapping used in adapter (-5..15 dB)
-            snr_score = float(out.get("snr_score", 0.0) or 0.0)
-            if snr_score > 0.0:
-                result["snr_db"] = float(snr_score * 20.0 - 5.0)
+            # Adapter returns: bpm/confidence/quality/snr_score/face_detect_rate/bpm_series/message
+            result["bpm"] = adapter_out.get("bpm")
+            result["confidence"] = float(adapter_out.get("confidence", 0.0) or 0.0)
+            result["quality"] = adapter_out.get("quality") or "poor"
+            result["message"] = adapter_out.get("message")
+            result["face_detect_rate"] = float(adapter_out.get("face_detect_rate", 0.0) or 0.0)
+            result["bpm_series"] = adapter_out.get("bpm_series")
+
+            # Prefer adapter snr_db (if available), else keep old derivation for backward compatibility
+            if isinstance(adapter_out.get("snr_db"), (int, float)):
+                result["snr_db"] = float(adapter_out.get("snr_db"))
             else:
-                result["snr_db"] = None
+                # Derive snr_db from snr_score mapping used in adapter (-5..15 dB)
+                snr_score = float(adapter_out.get("snr_score", 0.0) or 0.0)
+                if snr_score > 0.0:
+                    result["snr_db"] = float(snr_score * 20.0 - 5.0)
+                else:
+                    result["snr_db"] = None
 
         except Exception:
             # Defensive fallback
@@ -270,6 +283,39 @@ class SessionManager:
                 result["message"] = "Falha no processamento rPPG."
 
         finally:
+            # Emit one consolidated per-session metrics line (for cost/bottleneck measurement)
+            try:
+                timings = {}
+                if isinstance(adapter_out, dict):
+                    timings = adapter_out.get("timings_ms") or {}
+
+                snr_score = None
+                if isinstance(adapter_out, dict) and isinstance(adapter_out.get("snr_score"), (int, float)):
+                    snr_score = float(adapter_out.get("snr_score"))
+
+                metrics = {
+                    "session_id": s.session_id,
+                    "frames_received": int(s.frames_received),
+                    "chunks_received": int(s.chunks_received),
+                    "bytes_received": int(s.bytes_received),
+                    "elapsed_total_ms": int(round(duration * 1000.0)),
+                    "quality": result.get("quality"),
+                    "face_detect_rate": float(result.get("face_detect_rate") or 0.0),
+                    "snr_score": snr_score,
+                    "snr_db": result.get("snr_db"),
+                    "decode_ms_total": float(s.decode_ms_total),
+                    "processing_ms": float(processing_ms) if processing_ms is not None else None,
+                    "timings_ms": {
+                        "roi": float(timings.get("roi") or 0.0),
+                        "pos": float(timings.get("pos") or 0.0),
+                        "welch": float(timings.get("welch") or 0.0),
+                        "total": float(timings.get("total") or 0.0),
+                    },
+                }
+                print("[SESSION_METRICS] " + json.dumps(metrics, separators=(",", ":"), ensure_ascii=False))
+            except Exception:
+                pass
+
             # Cleanup memory regardless of success/failure
             try:
                 s.frames_rgb.clear()
