@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { captureJpegFrame } from '../utils/image';
 import {
-  ChunkPayload,
   getWsBase,
   RppgWebSocketClient,
   SessionResultMessage,
@@ -30,6 +29,15 @@ type State = {
   lastAckChunkSeq: number | null;
   error: string | null;
 };
+
+function toBase64(u8: Uint8Array): string {
+  let s = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < u8.length; i += chunk) {
+    s += String.fromCharCode(...u8.subarray(i, i + chunk));
+  }
+  return btoa(s);
+}
 
 export function useRppgSession(opts: UseRppgSessionOpts) {
   const {
@@ -106,14 +114,12 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
         return;
       }
 
-      // Optional per-chunk signals
       if ((msg as any)?.type === 'chunk_signal') {
         const face = Boolean((msg as any).face_detected);
         onFaceDetected?.(face);
         return;
       }
 
-      // Result
       if ((msg as any)?.bpm !== undefined && (msg as any)?.quality) {
         onResult(msg as any as SessionResultMessage);
         return;
@@ -141,7 +147,6 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
   const stop = useCallback(() => {
     cleanupTimers();
     setState((s) => ({ ...s, isCapturing: false }));
-    // keep socket open; server will finalize when enough frames/duration or client closes
     disconnect();
   }, [cleanupTimers, disconnect]);
 
@@ -150,13 +155,17 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       setState((s) => ({ ...s, error: 'Câmera não pronta.' }));
       return;
     }
+    if (!sessionId) {
+      setState((s) => ({ ...s, error: 'Sessão inválida. Inicie novamente.' }));
+      return;
+    }
 
     reset();
     setState((s) => ({ ...s, isCapturing: true, error: null }));
 
     try {
       await connect();
-    } catch (e: any) {
+    } catch {
       setState((s) => ({ ...s, isCapturing: false, error: 'Falha ao conectar no servidor.' }));
       return;
     }
@@ -167,8 +176,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     captureIntervalRef.current = window.setInterval(async () => {
       if (!clientRef.current?.isOpen()) return;
       const now = Date.now();
-      // Basic throttle/backpressure: if we are more than 2 seconds without ack progress,
-      // slow down by skipping captures.
+
       const ackLag = chunkSeqRef.current - (ackedChunkSeqRef.current + 1);
       if (ackLag > 2) return;
       if (now - lastSendAtRef.current < captureEveryMs - 5) return;
@@ -183,7 +191,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
           jpegQuality,
         });
         pendingFramesRef.current.push(jpeg);
-      } catch (e) {
+      } catch {
         // ignore occasional frame failures
       }
     }, Math.max(30, Math.floor(captureEveryMs / 2)));
@@ -197,18 +205,19 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       if (frames.length === 0) return;
 
       const chunk_seq = chunkSeqRef.current++;
-      const payload: ChunkPayload = {
+      const payload = {
         chunk_seq,
         ts_start_ms: Date.now(),
         fps_est: frames.length,
         width,
         height,
         n: frames.length,
-        frames,
+        frames: frames.map(toBase64),
       };
 
       try {
-        client.sendChunk(payload);
+        // Build 1 backend expects JSON
+        client.sendJson(payload);
         setState((s) => ({
           ...s,
           chunksSent: s.chunksSent + 1,
@@ -225,11 +234,10 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       const elapsed = (Date.now() - startedAt) / 1000;
       setState((s) => ({ ...s, secondsElapsed: Math.floor(elapsed) }));
       if (elapsed >= captureSeconds) {
-        // Stop capture and close socket to signal end.
         stop();
       }
     }, 250);
-  }, [captureSeconds, connect, height, jpegQuality, maxChunkSize, reset, stop, targetFps, videoEl, width, workCanvas]);
+  }, [captureSeconds, connect, height, jpegQuality, maxChunkSize, reset, sessionId, stop, targetFps, videoEl, width, workCanvas]);
 
   useEffect(() => {
     return () => {

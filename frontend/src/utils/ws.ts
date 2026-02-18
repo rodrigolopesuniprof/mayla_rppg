@@ -1,14 +1,4 @@
-import { decode, encode } from '@msgpack/msgpack';
-
-export type ChunkPayload = {
-  chunk_seq: number;
-  ts_start_ms: number;
-  fps_est: number;
-  width: number;
-  height: number;
-  n: number;
-  frames: Uint8Array[];
-};
+import { decode } from '@msgpack/msgpack';
 
 export type AckMessage = { type: 'ack'; chunk_seq: number; received: number };
 
@@ -35,7 +25,6 @@ export function getWsBase(): string {
   const env = (import.meta as any).env?.VITE_WS_BASE;
   if (env) return env;
 
-  // Default for dev: match current location.
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${window.location.host}`;
 }
@@ -70,7 +59,7 @@ export class RppgWebSocketClient {
             const msg = JSON.parse(ev.data);
             this.onMessage(msg);
           } else {
-            // We currently expect server → client JSON strings, but keep support.
+            // If we ever use binary server messages later.
             const msg = decode(new Uint8Array(ev.data as ArrayBuffer)) as any;
             this.onMessage(msg);
           }
@@ -91,11 +80,10 @@ export class RppgWebSocketClient {
     this.ws?.close();
   }
 
-  sendChunk(payload: ChunkPayload) {
+  sendJson(payload: unknown) {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket is not open');
     }
-    const bin = encode(payload);
-    this.ws.send(bin);
+    this.ws.send(JSON.stringify(payload));
   }
 }

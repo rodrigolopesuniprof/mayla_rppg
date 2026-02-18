@@ -1,7 +1,7 @@
 import React from 'react';
 
 export type VideoPreviewProps = {
-  videoRef: React.RefObject<HTMLVideoElement>;
+  videoRef: React.RefObject<HTMLVideoElement | null>;
   width: number;
   height: number;
 };
@@ -18,7 +18,7 @@ export default function VideoPreview({ videoRef, width, height }: VideoPreviewPr
 
       <div className="videoWrap" style={{ marginTop: 10 }}>
         <video
-          ref={videoRef}
+          ref={videoRef as any}
           autoPlay
           playsInline
           muted
