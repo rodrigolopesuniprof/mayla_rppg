@@ -61,6 +61,10 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
   const inFlightChunkRef = useRef(false);
   const stoppedRef = useRef(false);
 
+  // Important: we must keep the *active* session id in a ref.
+  // The parent updates sessionId via React state, which may lag behind the start() call.
+  const activeSessionIdRef = useRef<string>('');
+
   const [state, setState] = useState<State>({
     isCapturing: false,
     secondsElapsed: 0,
@@ -87,6 +91,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     lastSendAtRef.current = 0;
     inFlightChunkRef.current = false;
     stoppedRef.current = false;
+    activeSessionIdRef.current = '';
     setState({
       isCapturing: false,
       secondsElapsed: 0,
@@ -101,7 +106,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     if (inFlightChunkRef.current) return;
     if (pendingFramesRef.current.length === 0) return;
 
-    const sid = sessionId;
+    const sid = activeSessionIdRef.current || sessionId;
     if (!sid) {
       setState((s) => ({ ...s, error: 'Sessão inválida. Inicie novamente.' }));
       return;
@@ -156,7 +161,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
   }, [height, maxChunkSize, onFaceDetected, sessionId, width]);
 
   const finalize = useCallback(async () => {
-    const sid = sessionId;
+    const sid = activeSessionIdRef.current || sessionId;
     if (!sid) return;
     try {
       const resp = await fetch(`${getApiBase()}/sessions/${encodeURIComponent(sid)}/end`, {
@@ -195,6 +200,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       }
 
       reset();
+      activeSessionIdRef.current = sid;
       setState((s) => ({ ...s, isCapturing: true, error: null }));
 
       // Capture loop
@@ -248,7 +254,6 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
           // Send remaining frames and then finalize.
           void (async () => {
             await postChunkOnce();
-            // If there are still pending frames (large backlog), try a couple more sends.
             await postChunkOnce();
             await finalize();
           })();
