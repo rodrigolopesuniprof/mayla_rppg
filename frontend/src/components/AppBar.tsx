@@ -1,6 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+
+// Logos oficiais (coloque os PNGs em frontend/src/assets/ com estes nomes)
+import logoDark from '../assets/logo-mayla-dark.png';
+import logoWhite from '../assets/logo-mayla-white.png';
 
 interface AppBarProps {
   showBack?: boolean;
@@ -8,45 +12,12 @@ interface AppBarProps {
   rightIcon?: React.ReactNode;
 }
 
-const LIGHT_LOGO_CANDIDATES = [
-  '/logo-mayla-dark.png',
-  '/Logo%20Mayla.png',
-  '/Logo%20Mayla%20VER%2002.png',
-];
-
-const DARK_LOGO_CANDIDATES = [
-  '/logo-mayla-white.png',
-  '/Logo%20Mayla%20Branca.png',
-  '/Logo%20Mayla%20VER%20Branca.png',
-];
-
-function MaylaLogo({ dark }: { dark?: boolean }) {
-  const candidates = useMemo(() => (dark ? DARK_LOGO_CANDIDATES : LIGHT_LOGO_CANDIDATES), [dark]);
-  const [idx, setIdx] = useState(0);
-
-  const src = candidates[idx] ?? null;
-
-  if (!src) {
-    return (
-      <div className={dark ? 'text-white font-display text-lg' : 'text-ink font-display text-lg'}>
-        Mayla Saúde
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt="Mayla Saúde"
-      className="h-8 w-auto object-contain"
-      onError={() => setIdx((v) => v + 1)}
-    />
-  );
-}
+const MaylaLogo = ({ dark }: { dark?: boolean }) => (
+  <img src={dark ? logoWhite : logoDark} alt="Mayla Saúde" className="h-8 w-auto object-contain" />
+);
 
 const AppBar = ({ showBack, dark, rightIcon }: AppBarProps) => {
   const navigate = useNavigate();
-
   return (
     <div className="flex items-center justify-between px-5 pt-3.5 pb-2.5 min-h-[72px]">
       {showBack ? (
