@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Request, HTTPException
+
+from ..models.dto import SessionEndReq, SessionEndResp, SessionParams, SessionStartReq
+from ..services.rppg_service import SESSION_MANAGER
+from ..config import DEFAULTS
+
+router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+@router.post("/start", response_model=SessionParams)
+def start_session(req: SessionStartReq, request: Request):
+    if not req.consent:
+        raise HTTPException(status_code=400, detail="consent_required")
+
+    client_ip = request.client.host if request.client else "unknown"
+    try:
+        s = SESSION_MANAGER.create_session(client_ip=client_ip)
+    except ValueError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+
+    return SessionParams(
+        session_id=s.session_id,
+        capture_seconds=s.capture_seconds,
+        target_fps=s.target_fps,
+        resolution=s.resolution,
+        jpeg_quality=s.jpeg_quality,
+        roi_refresh_interval=s.roi_refresh_interval,
+        ttl_sec=s.ttl_sec,
+        max_frames=s.max_frames,
+        max_bytes_mb=s.max_bytes_mb,
+        max_chunk_size=s.max_chunk_size,
+        mock_mode=DEFAULTS.mock_mode,
+    )
+
+
+@router.post("/end", response_model=SessionEndResp)
+def end_session(req: SessionEndReq):
+    SESSION_MANAGER.end_session(req.session_id)
+    return SessionEndResp(ok=True)

@@ -1,0 +1,10 @@
+fastapi==0.115.6
+uvicorn[standard]==0.30.6
+pydantic==2.10.3
+python-multipart==0.0.12
+numpy==1.26.4
+scipy==1.11.4
+msgpack==1.0.8
+pillow==10.4.0
+mediapipe==0.10.14
+# Build 2 (Real): uses local pyVHR package from this repo; no extra requirement needed.
