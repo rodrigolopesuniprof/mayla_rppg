@@ -7,4 +7,5 @@ scipy==1.11.4
 msgpack==1.0.8
 pillow==10.4.0
 mediapipe==0.10.14
+websockets==12.0
 # Build 2 (Real): uses local pyVHR package from this repo; no extra requirement needed.
