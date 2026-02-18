@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -35,33 +36,57 @@ async def ws_session(websocket: WebSocket, session_id: str):
         f"[WS] session started session_id={session_id} capture_seconds={s.capture_seconds} max_chunk_size={s.max_chunk_size}"
     )
 
+    def _poor_result(elapsed: float, message: str) -> dict:
+        s2 = SESSION_MANAGER.get(session_id)
+        return {
+            "type": "result",
+            "bpm": None,
+            "confidence": 0.0,
+            "quality": "poor",
+            "message": message,
+            "duration_s": round(elapsed, 2),
+            "frames_received": s2.frames_received if s2 else 0,
+            "face_detect_rate": 0.0,
+            "snr_db": None,
+            "bpm_series": None,
+        }
+
     async def _finalize(reason: str):
         elapsed = time.time() - started_at
+        # Optional progress message
         try:
-            result = SESSION_MANAGER.finalize_mock(session_id)
-        except Exception as e:
-            result = {
-                "type": "result",
-                "bpm": None,
-                "confidence": 0.0,
-                "quality": "poor",
-                "message": "Falha ao finalizar sessão.",
-                "duration_s": round(elapsed, 2),
-                "frames_received": 0,
-                "face_detect_rate": 0.0,
-                "snr_db": None,
-                "bpm_series": None,
-            }
-            print(f"[WS] finalize error session_id={session_id} err={repr(e)}")
+            await websocket.send_text(json.dumps({"type": "progress", "stage": "processing"}))
+        except Exception:
+            pass
 
+        try:
+            # Hard timeout to avoid hanging WS
+            result = await asyncio.wait_for(
+                asyncio.to_thread(SESSION_MANAGER.finalize_session, session_id),
+                timeout=10.0,
+            )
+            if not isinstance(result, dict):
+                result = _poor_result(elapsed, "Resultado inválido do processamento.")
+        except asyncio.TimeoutError:
+            print(f"[WS] finalize timeout session_id={session_id}")
+            result = _poor_result(elapsed, "Processamento excedeu o tempo limite. Tente novamente.")
+        except Exception as e:
+            print(f"[WS] finalize error session_id={session_id} err={repr(e)}")
+            result = _poor_result(elapsed, "Falha ao processar a medição.")
+
+        # ALWAYS send result
         result["type"] = "result"
-        # Prefer server-side measured duration
+        # Prefer server-side duration
         result["duration_s"] = round(elapsed, 2)
 
-        print(f"[WS] finalize session_id={session_id} reason={reason} elapsed={elapsed:.2f}s")
-        await websocket.send_text(json.dumps(result))
-        await websocket.close(code=1000)
-        SESSION_MANAGER.end_session(session_id)
+        try:
+            await websocket.send_text(json.dumps(result))
+        finally:
+            try:
+                await websocket.close(code=1000)
+            except Exception:
+                pass
+            SESSION_MANAGER.end_session(session_id)
 
     try:
         while True:
@@ -99,7 +124,7 @@ async def ws_session(websocket: WebSocket, session_id: str):
                 await websocket.close(code=4400)
                 return
 
-            # Ack per chunk (echo declared n if present; otherwise use ingested count)
+            # Ack per chunk (keep EXACT structure)
             n_ack = n_declared if isinstance(n_declared, int) else n_ingested
             await websocket.send_text(json.dumps({"type": "ack", "chunk_seq": chunk_seq, "received": n_ack}))
 
@@ -120,13 +145,6 @@ async def ws_session(websocket: WebSocket, session_id: str):
         return
     except Exception as e:
         print(f"[WS] error session_id={session_id} err={repr(e)}")
-        try:
-            await websocket.send_text(json.dumps({"type": "error", "message": "server_error"}))
-        except Exception:
-            pass
-        try:
-            await websocket.close(code=1011)
-        except Exception:
-            pass
+        # Ensure cleanup on unexpected error
         SESSION_MANAGER.end_session(session_id)
         return

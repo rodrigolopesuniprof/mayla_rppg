@@ -269,6 +269,14 @@ class SessionManager:
 
         return result
 
+    def finalize_session(self, session_id: str) -> dict:
+        """Preferred name for Build 2 finalization.
+
+        Kept as a thin alias to preserve backward compatibility with callers still using
+        finalize_mock().
+        """
+        return self.finalize_mock(session_id)
+
     def _rate_limit_ip(self, client_ip: str):
         # Naive limiter: max 10 starts / minute / IP
         now = time.time()
