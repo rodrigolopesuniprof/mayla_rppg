@@ -26,27 +26,51 @@ function startFastApiBackend() {
           env: { ...process.env, PYTHONUNBUFFERED: '1' },
         });
 
-      try {
-        backendProcess = spawnWith('python');
-      } catch {
-        backendProcess = spawnWith('python3');
-      }
+      const attach = (cp: ChildProcessWithoutNullStreams, cmd: string) => {
+        backendProcess = cp;
 
-      backendProcess.on('error', () => {
-        // Fallback for environments where `python` is not available
-        if (backendProcess) return;
-        backendProcess = spawnWith('python3');
-      });
+        cp.stdout.on('data', (d) => {
+          const s = d.toString().trimEnd();
+          if (s) console.log(`[backend:${cmd}] ${s}`);
+        });
 
-      backendProcess.stdout.on('data', (d) => {
-        const s = d.toString().trimEnd();
-        if (s) console.log(`[backend] ${s}`);
-      });
+        cp.stderr.on('data', (d) => {
+          const s = d.toString().trimEnd();
+          if (s) console.error(`[backend:${cmd}] ${s}`);
+        });
 
-      backendProcess.stderr.on('data', (d) => {
-        const s = d.toString().trimEnd();
-        if (s) console.error(`[backend] ${s}`);
-      });
+        cp.on('exit', (code, signal) => {
+          console.error(`[backend:${cmd}] exited code=${code} signal=${signal}`);
+          backendProcess = null;
+        });
+      };
+
+      // Try python, then python3 (spawn() emits 'error' asynchronously when command is missing).
+      const candidates = ['python', 'python3'];
+      let started = false;
+
+      const tryNext = (i: number) => {
+        if (i >= candidates.length) {
+          console.error('[backend] failed to start: neither "python" nor "python3" is available');
+          return;
+        }
+
+        const cmd = candidates[i];
+        const cp = spawnWith(cmd);
+
+        cp.once('spawn', () => {
+          started = true;
+          attach(cp, cmd);
+        });
+
+        cp.once('error', (err) => {
+          if (started) return;
+          console.error(`[backend:${cmd}] spawn failed: ${String((err as any)?.message ?? err)}`);
+          tryNext(i + 1);
+        });
+      };
+
+      tryNext(0);
 
       const cleanup = () => {
         try {
