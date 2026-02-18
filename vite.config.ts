@@ -1,8 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import tailwindcss from '@tailwindcss/postcss';
-import autoprefixer from 'autoprefixer';
 
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 
@@ -94,11 +92,6 @@ function startFastApiBackend() {
 export default defineConfig({
   root: 'frontend',
   plugins: [startFastApiBackend(), react()],
-  css: {
-    postcss: {
-      plugins: [tailwindcss, autoprefixer],
-    },
-  },
   server: {
     port: 5173,
     strictPort: true,
