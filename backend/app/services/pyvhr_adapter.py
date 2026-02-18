@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -130,10 +131,6 @@ def _estimate_bpm_series(bvp: np.ndarray, fps: float, winsize: int, stride: int)
 
 
 def _quality_from_confidence_and_mad(confidence: float, mad_bpm: float) -> str:
-    # Align with your spec:
-    # good: confidence >= 0.6 and MAD <= 5
-    # medium: confidence in [0.3, 0.6) OR MAD in (5, 10]
-    # poor: confidence < 0.3 OR MAD > 10
     if confidence >= 0.6 and mad_bpm <= 5.0:
         return "good"
     if confidence >= 0.3 and mad_bpm <= 10.0:
@@ -147,28 +144,6 @@ def process_rppg_signal(
     winsize: int = 5,
     stride: int = 1,
 ) -> dict:
-    """Process a sequence of RGB frames into rPPG metrics.
-
-    Input:
-      - frames: list of RGB numpy arrays (H,W,3), dtype uint8 preferred.
-      - fps: sampling rate.
-
-    Output (always returns a dict; never raises):
-      {
-        "bpm": float | None,
-        "confidence": float,
-        "quality": "good" | "medium" | "poor",
-        "snr_score": float,
-        "face_detect_rate": float,
-        "bpm_series": list | None,
-        "message": str | None,
-      }
-
-    Notes:
-      - This function is intentionally isolated from FastAPI.
-      - Defensive: internal try/except; never throws.
-    """
-
     base_result: Dict[str, Any] = {
         "bpm": None,
         "confidence": 0.0,
@@ -179,6 +154,11 @@ def process_rppg_signal(
         "message": "Medição indisponível.",
     }
 
+    t_total0 = time.perf_counter()
+    t_roi_ms = 0.0
+    t_pos_ms = 0.0
+    t_welch_ms = 0.0
+
     try:
         if not isinstance(frames, list) or len(frames) == 0:
             base_result["message"] = "Sem frames para processar."
@@ -188,7 +168,8 @@ def process_rppg_signal(
             base_result["message"] = "FPS inválido."
             return base_result
 
-        # --- ROI detection (MediaPipe FaceDetection) ---
+        # --- ROI detection + RGB mean extraction ---
+        t0 = time.perf_counter()
         mp_face = mp.solutions.face_detection
         face_detector = mp_face.FaceDetection(model_selection=0, min_detection_confidence=0.5)
 
@@ -211,7 +192,6 @@ def process_rppg_signal(
             # Refresh ROI periodically
             do_refresh = (i % _ROI_REFRESH_INTERVAL) == 0 or roi is None
             if do_refresh:
-                # MediaPipe expects RGB
                 res = face_detector.process(arr)
                 new_roi: Optional[_Roi] = None
                 if res and res.detections:
@@ -229,7 +209,6 @@ def process_rppg_signal(
 
                 if new_roi is not None and new_roi.area() > 0:
                     roi = new_roi
-                # else: keep previous roi (reuse)
 
             if roi is None or roi.area() <= 0:
                 rgb_means.append(np.array([np.nan, np.nan, np.nan], dtype=np.float32))
@@ -245,17 +224,17 @@ def process_rppg_signal(
             face_valid += 1
 
         face_detector.close()
+        t_roi_ms = (time.perf_counter() - t0) * 1000.0
+        print(f"[RPPG] stage=roi elapsed={t_roi_ms:.0f} ms")
 
         face_detect_rate = face_valid / max(1, len(frames))
         base_result["face_detect_rate"] = float(face_detect_rate)
 
-        # Gating: face detect
         if face_detect_rate < 0.7:
             base_result["message"] = "Face pouco detectada. Repita com o rosto centralizado e estável."
             return base_result
 
         sig = np.vstack(rgb_means)  # (T, 3)
-        # Replace NaNs defensively
         if np.isnan(sig).any():
             # forward fill then back fill
             for c in range(3):
@@ -264,14 +243,12 @@ def process_rppg_signal(
                 if not np.any(mask):
                     base_result["message"] = "Sinal RGB inválido."
                     return base_result
-                # forward fill
                 last = col[np.argmax(mask)]
                 for k in range(col.shape[0]):
                     if np.isfinite(col[k]):
                         last = col[k]
                     else:
                         col[k] = last
-                # back fill
                 last = col[np.argmax(mask)]
                 for k in range(col.shape[0] - 1, -1, -1):
                     if np.isfinite(col[k]):
@@ -281,23 +258,23 @@ def process_rppg_signal(
                 sig[:, c] = col
 
         # --- POS extraction (pyVHR) ---
-        # Shape to [estimators=1, channels=3, frames=T]
+        t0 = time.perf_counter()
         X = np.transpose(sig[np.newaxis, :, :], (0, 2, 1)).astype(np.float32)
-
         try:
             bvp = cpu_POS(X, fps=float(fps)).squeeze().astype(np.float32)
         except Exception:
-            # Fallback CHROM
             bvp = cpu_CHROM(X).squeeze().astype(np.float32)
 
         if bvp.ndim != 1 or bvp.size < int(max(3, winsize) * fps):
             base_result["message"] = "Sinal BVP insuficiente."
             return base_result
 
-        # Optional bandpass on BVP (stabilizes Welch)
         bvp_f = _bandpass_bvp(bvp, fps=float(fps), min_hz=0.65, max_hz=4.0, order=4)
+        t_pos_ms = (time.perf_counter() - t0) * 1000.0
+        print(f"[RPPG] stage=pos elapsed={t_pos_ms:.0f} ms")
 
-        # --- BPM series by Welch over windows ---
+        # --- Welch / BPM series / SNR ---
+        t0 = time.perf_counter()
         bpm_series = _estimate_bpm_series(bvp_f, fps=float(fps), winsize=winsize, stride=stride)
         if len(bpm_series) == 0:
             base_result["message"] = "Não foi possível estimar BPM com estabilidade."
@@ -306,26 +283,21 @@ def process_rppg_signal(
         bpm_med = float(np.median(bpm_series))
         mad_bpm = float(median_abs_deviation(np.array(bpm_series), scale=1.0, nan_policy="omit"))
 
-        # --- SNR (PSD/Welch) ---
-        # Compute global PSD for SNR around peak
         nperseg = min(256, bvp_f.size)
         noverlap = int(0.8 * nperseg)
         freqs, psd = welch(bvp_f, fs=float(fps), nperseg=nperseg, noverlap=noverlap, nfft=2048)
         f_peak_hz = bpm_med / 60.0
-        snr_db, snr_score = _snr_from_psd(freqs, psd, f_peak_hz=f_peak_hz)
+        _snr_db, snr_score = _snr_from_psd(freqs, psd, f_peak_hz=f_peak_hz)
+        t_welch_ms = (time.perf_counter() - t0) * 1000.0
+        print(f"[RPPG] stage=welch elapsed={t_welch_ms:.0f} ms")
 
         base_result["snr_score"] = float(snr_score)
-
-        # Gating: snr
         if snr_score < 0.3:
             base_result["message"] = "Sinal com baixa qualidade (SNR baixo). Repita em melhor iluminação e com menos movimento."
             return base_result
 
-        # --- Confidence + quality ---
-        # Stability score: MAD <= 10 bpm -> [1..0]
         stability_score = float(max(0.0, min(1.0, 1.0 - (mad_bpm / 10.0))))
         confidence = float(max(0.0, min(1.0, 0.6 * snr_score + 0.4 * stability_score)))
-
         quality = _quality_from_confidence_and_mad(confidence=confidence, mad_bpm=mad_bpm)
 
         msg = None
@@ -340,11 +312,12 @@ def process_rppg_signal(
             "face_detect_rate": float(face_detect_rate),
             "bpm_series": [float(x) for x in bpm_series],
             "message": msg,
-            # Note: snr_db and other audit fields are handled elsewhere in the backend result schema.
-            # We keep the adapter output limited to the requested keys.
         }
 
     except Exception as e:
-        # Defensive: never raise
         base_result["message"] = f"Falha no processamento rPPG: {type(e).__name__}"
         return base_result
+
+    finally:
+        total_ms = (time.perf_counter() - t_total0) * 1000.0
+        print(f"[RPPG] stage=total elapsed={total_ms:.0f} ms")

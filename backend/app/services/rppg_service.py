@@ -40,6 +40,9 @@ class SessionState:
     started_at: Optional[float] = None
     finished: bool = False
 
+    # Ingest/processing timing
+    decode_ms_total: float = 0.0
+
     # Build 2: store decoded frames (downscaled RGB) for adapter processing.
     # We do NOT store base64 strings or raw JPEG bytes.
     frames_rgb: List[np.ndarray] = field(default_factory=list)
@@ -143,7 +146,7 @@ class SessionManager:
 
         - Does NOT store base64 strings
         - Does NOT store raw JPEG bytes
-        - Stores only RGB frames (downscaled) to reduce memory, because the adapter requires frames.
+        - Stores only RGB frames (downscaled) to reduce memory.
 
         Returns: (n_frames, total_bytes)
         """
@@ -154,7 +157,9 @@ class SessionManager:
         if not isinstance(frames_b64, list):
             raise ValueError("missing_frames")
 
-        # Decode first (to enforce max_frame_bytes based on raw bytes)
+        t0 = time.perf_counter()
+
+        # Decode base64 first (to enforce max_frame_bytes based on raw bytes)
         jpegs: List[bytes] = []
         sizes: List[int] = []
         for f in frames_b64:
@@ -184,6 +189,7 @@ class SessionManager:
                 # Skip frames that fail decoding
                 continue
 
+        s.decode_ms_total += (time.perf_counter() - t0) * 1000.0
         return n, total_bytes
 
     def should_finalize(self, session_id: str) -> bool:
@@ -229,6 +235,9 @@ class SessionManager:
         }
 
         try:
+            # Log accumulated decode time (base64->jpeg->rgb) for the session
+            print(f"[RPPG] stage=decode elapsed={s.decode_ms_total:.0f} ms")
+
             # fps comes from session parameters (as requested)
             fps = float(s.target_fps)
             out = pyvhr_adapter.process_rppg_signal(

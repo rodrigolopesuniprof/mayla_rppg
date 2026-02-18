@@ -36,6 +36,8 @@ async def ws_session(websocket: WebSocket, session_id: str):
         f"[WS] session started session_id={session_id} capture_seconds={s.capture_seconds} max_chunk_size={s.max_chunk_size}"
     )
 
+    finalized = asyncio.Event()
+
     def _poor_result(elapsed: float, message: str) -> dict:
         s2 = SESSION_MANAGER.get(session_id)
         return {
@@ -52,7 +54,12 @@ async def ws_session(websocket: WebSocket, session_id: str):
         }
 
     async def _finalize(reason: str):
+        if finalized.is_set():
+            return
+        finalized.set()
+
         elapsed = time.time() - started_at
+
         # Optional progress message
         try:
             await websocket.send_text(json.dumps({"type": "progress", "stage": "processing"}))
@@ -76,17 +83,32 @@ async def ws_session(websocket: WebSocket, session_id: str):
 
         # ALWAYS send result
         result["type"] = "result"
-        # Prefer server-side duration
         result["duration_s"] = round(elapsed, 2)
 
         try:
-            await websocket.send_text(json.dumps(result))
+            try:
+                await websocket.send_text(json.dumps(result))
+            except Exception as e:
+                print(f"[WS] send result failed session_id={session_id} err={repr(e)}")
         finally:
             try:
                 await websocket.close(code=1000)
             except Exception:
                 pass
             SESSION_MANAGER.end_session(session_id)
+
+    async def _watchdog():
+        # Ensure we never keep a session open without a result.
+        # If the client stops sending messages (or never sends end), finalize anyway.
+        try:
+            await asyncio.sleep(max(1.0, float(s.capture_seconds) + 2.0))
+            if not finalized.is_set():
+                print(f"[WS] watchdog finalize session_id={session_id}")
+                await _finalize(reason="watchdog")
+        except Exception:
+            return
+
+    watchdog_task = asyncio.create_task(_watchdog())
 
     try:
         while True:
@@ -99,7 +121,6 @@ async def ws_session(websocket: WebSocket, session_id: str):
                 await websocket.send_text(json.dumps({"type": "error", "message": "invalid_json"}))
                 continue
 
-            # Explicit end event from client
             if payload.get("type") == "end":
                 await _finalize(reason="client_end")
                 return
@@ -145,6 +166,11 @@ async def ws_session(websocket: WebSocket, session_id: str):
         return
     except Exception as e:
         print(f"[WS] error session_id={session_id} err={repr(e)}")
-        # Ensure cleanup on unexpected error
         SESSION_MANAGER.end_session(session_id)
         return
+    finally:
+        try:
+            watchdog_task.cancel()
+        except Exception:
+            pass
+        finalized.set()
