@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import base64
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
 from io import BytesIO
-from typing import Dict, List, Optional, Tuple
-
-import numpy as np
-from PIL import Image
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..config import DEFAULTS
-from . import pyvhr_adapter
 
-import json
+# Optional heavy deps (Build 2).
+# In many environments (e.g. Python 3.14), numpy/scipy/mediapipe wheels may be unavailable.
+# We keep the backend working in mock mode without these packages.
+try:
+    import numpy as np  # type: ignore
+except Exception:  # pragma: no cover
+    np = None  # type: ignore
+
+try:
+    from PIL import Image  # type: ignore
+except Exception:  # pragma: no cover
+    Image = None  # type: ignore
 
 
 @dataclass
@@ -45,9 +53,9 @@ class SessionState:
     # Ingest/processing timing
     decode_ms_total: float = 0.0
 
-    # Build 2: store decoded frames (downscaled RGB) for adapter processing.
-    # We do NOT store base64 strings or raw JPEG bytes.
-    frames_rgb: List[np.ndarray] = field(default_factory=list)
+    # Build 2: optionally store decoded frames (downscaled RGB) for adapter processing.
+    # When running in mock_mode (or without deps), we keep this empty.
+    frames_rgb: List[Any] = field(default_factory=list)
 
 
 class SessionManager:
@@ -144,11 +152,10 @@ class SessionManager:
         s.chunks_received += 1
 
     def ingest_chunk_base64(self, session_id: str, frames_b64: List[str]) -> Tuple[int, int]:
-        """Decode incoming base64 JPEG frames, convert to RGB numpy and store downscaled frames.
+        """Ingest incoming base64 JPEG frames.
 
-        - Does NOT store base64 strings
-        - Does NOT store raw JPEG bytes
-        - Stores only RGB frames (downscaled) to reduce memory.
+        In **mock_mode**, this function only validates/counts bytes and does not decode/store frames.
+        In **real mode**, it decodes JPEG -> RGB numpy arrays (downscaled) when deps are available.
 
         Returns: (n_frames, total_bytes)
         """
@@ -178,6 +185,17 @@ class SessionManager:
         total_bytes = int(sum(sizes))
         self.validate_and_count_chunk(session_id=session_id, n_frames=n, total_chunk_bytes=total_bytes, frame_sizes=sizes)
 
+        # Mock mode: do not decode or store frames.
+        if DEFAULTS.mock_mode:
+            s.decode_ms_total += (time.perf_counter() - t0) * 1000.0
+            return n, total_bytes
+
+        # Real mode requires PIL + numpy.
+        if Image is None or np is None:
+            # Keep WS alive; finalization will return a poor result.
+            s.decode_ms_total += (time.perf_counter() - t0) * 1000.0
+            return n, total_bytes
+
         # Convert to RGB numpy and keep a smaller resolution to reduce memory.
         # 256x144 keeps face detector reasonably stable while staying light.
         target_w, target_h = 256, 144
@@ -202,10 +220,29 @@ class SessionManager:
             return False
         return (time.time() - s.started_at) >= s.capture_seconds
 
-    def finalize_mock(self, session_id: str) -> dict:
-        """Build 2 implementation (keeps public interface name for compatibility).
+    def _mock_result(self, s: SessionState, duration: float) -> dict:
+        # Stable pseudo-random bpm per session (no external deps).
+        seed = int(uuid.UUID(s.session_id)) % 10_000
+        bpm = 68 + (seed % 18)  # 68..85
+        confidence = 0.6 if s.frames_received >= max(10, int(s.capture_seconds * s.target_fps * 0.6)) else 0.35
+        quality = "good" if confidence >= 0.6 else "medium"
 
-        Produces a result dict compatible with the existing WS contract.
+        return {
+            "bpm": float(bpm),
+            "confidence": float(confidence),
+            "quality": quality,
+            "message": "Medição simulada (mock_mode).",
+            "duration_s": round(duration, 2),
+            "frames_received": s.frames_received,
+            "face_detect_rate": 1.0,
+            "snr_db": 12.0 if quality == "good" else 6.0,
+            "bpm_series": None,
+        }
+
+    def finalize_real(self, session_id: str) -> dict:
+        """Build 2 finalization (real processing).
+
+        Kept separate so we can keep imports lazy and allow the app to run without heavy deps.
         """
         s = self.get(session_id)
         if not s:
@@ -216,12 +253,6 @@ class SessionManager:
         duration = 0.0
         if s.started_at is not None:
             duration = max(0.0, now - s.started_at)
-
-        # Ensure adapter uses the session ROI refresh interval (without changing its public signature)
-        try:
-            pyvhr_adapter._ROI_REFRESH_INTERVAL = int(max(1, s.roi_refresh_interval))
-        except Exception:
-            pass
 
         # Default poor result fallback
         result = {
@@ -240,12 +271,21 @@ class SessionManager:
         processing_ms: Optional[float] = None
 
         try:
+            # Lazy import: adapter has heavy deps (numpy/scipy/mediapipe + local pyVHR)
+            from . import pyvhr_adapter
+
+            # Ensure adapter uses the session ROI refresh interval (without changing its public signature)
+            try:
+                pyvhr_adapter._ROI_REFRESH_INTERVAL = int(max(1, s.roi_refresh_interval))
+            except Exception:
+                pass
+
             # Log accumulated decode time (base64->jpeg->rgb) for the session
             print(f"[RPPG] stage=decode elapsed={s.decode_ms_total:.0f} ms")
 
             t_proc0 = time.perf_counter()
 
-            # fps comes from session parameters (as requested)
+            # fps comes from session parameters
             fps = float(s.target_fps)
             adapter_out = pyvhr_adapter.process_rppg_signal(
                 frames=s.frames_rgb,
@@ -325,12 +365,50 @@ class SessionManager:
         return result
 
     def finalize_session(self, session_id: str) -> dict:
-        """Preferred name for Build 2 finalization.
+        """Finalize a session and return a dict compatible with the WS contract."""
+        s = self.get(session_id)
+        if not s:
+            raise ValueError("session_not_found_or_expired")
 
-        Kept as a thin alias to preserve backward compatibility with callers still using
-        finalize_mock().
-        """
-        return self.finalize_mock(session_id)
+        s.finished = True
+        now = time.time()
+        duration = 0.0
+        if s.started_at is not None:
+            duration = max(0.0, now - s.started_at)
+
+        if DEFAULTS.mock_mode:
+            # In mock mode we don't need any heavy deps.
+            out = self._mock_result(s, duration)
+            try:
+                print(
+                    "[SESSION_METRICS] "
+                    + json.dumps(
+                        {
+                            "session_id": s.session_id,
+                            "frames_received": int(s.frames_received),
+                            "chunks_received": int(s.chunks_received),
+                            "bytes_received": int(s.bytes_received),
+                            "elapsed_total_ms": int(round(duration * 1000.0)),
+                            "quality": out.get("quality"),
+                            "mock_mode": True,
+                        },
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    )
+                )
+            except Exception:
+                pass
+            try:
+                s.frames_rgb.clear()
+            except Exception:
+                pass
+            return out
+
+        return self.finalize_real(session_id)
+
+    # Backwards-compatible alias (older callers)
+    def finalize_mock(self, session_id: str) -> dict:
+        return self.finalize_session(session_id)
 
     def _rate_limit_ip(self, client_ip: str):
         # Naive limiter: max 10 starts / minute / IP

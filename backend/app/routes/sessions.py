@@ -20,6 +20,8 @@ def start_session(req: SessionStartReq, request: Request):
     except ValueError as e:
         raise HTTPException(status_code=429, detail=str(e))
 
+    # If we're in mock_mode, the backend must not require heavy deps.
+    # In real mode we still try to run even if deps are missing, but the result may be "poor".
     return SessionParams(
         session_id=s.session_id,
         capture_seconds=s.capture_seconds,
