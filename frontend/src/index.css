@@ -36,7 +36,7 @@
 
     --radius: 1rem;
 
-    /* Mayla custom tokens */
+    /* Mayla custom tokens (Tailwind mapping) */
     --rose: 5 78% 60%;
     --rose-lt: 8 84% 70%;
     --peach: 22 86% 74%;
@@ -51,6 +51,29 @@
 
     --font-display: 'Fraunces', serif;
     --font-body: 'DM Sans', sans-serif;
+
+    /* --- Mayla CSS clássico (hex tokens) --- */
+    --mayla-bg: #F7F0EA;
+    --mayla-text: #1F2937;
+    --mayla-muted: #6B7280;
+
+    --mayla-card: #FFFFFF;
+    --mayla-radius: 22px;
+    --mayla-radius-lg: 28px;
+    --mayla-shadow: 0 10px 25px rgba(16, 24, 40, 0.08);
+
+    --mayla-red-1: #E55A4F;
+    --mayla-red-2: #C74B45;
+    --mayla-red-3: #B43E39;
+
+    --mayla-green: #16A34A;
+    --mayla-amber: #F59E0B;
+    --mayla-blue: #3B82F6;
+
+    --pill-bg: rgba(255, 255, 255, 0.18);
+    --pill-border: rgba(255, 255, 255, 0.20);
+
+    --bar-track: rgba(17, 24, 39, 0.08);
   }
 }
 
@@ -71,6 +94,224 @@
   h4 {
     font-family: var(--font-display);
   }
+}
+
+/* -------------------------
+   Mayla CSS clássico (classes)
+   ------------------------- */
+
+.mayla-page {
+  min-height: 100vh;
+  background: var(--mayla-bg);
+  color: var(--mayla-text);
+}
+
+.mayla-container {
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 18px 18px 28px;
+}
+
+.mayla-h1 {
+  font-family: ui-serif, Georgia, 'Times New Roman', serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  font-size: 34px;
+  margin: 6px 0 14px;
+}
+
+.mayla-h1 em {
+  color: var(--mayla-red-1);
+  font-style: italic;
+}
+
+.mayla-sub {
+  font-size: 12px;
+  color: var(--mayla-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mayla-card {
+  background: var(--mayla-card);
+  border-radius: var(--mayla-radius);
+  box-shadow: var(--mayla-shadow);
+  padding: 16px 16px;
+}
+
+.mayla-card + .mayla-card {
+  margin-top: 14px;
+}
+
+.mayla-hero {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--mayla-radius-lg);
+  padding: 18px 18px;
+  background: linear-gradient(135deg, var(--mayla-red-1), var(--mayla-red-2));
+  color: #fff;
+  box-shadow: 0 18px 40px rgba(199, 75, 69, 0.25);
+}
+
+.mayla-hero::after {
+  content: '';
+  position: absolute;
+  right: -40px;
+  top: -40px;
+  width: 160px;
+  height: 160px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0));
+  transform: rotate(18deg);
+}
+
+.mayla-hero__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mayla-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: rgba(17, 24, 39, 0.04);
+  color: var(--mayla-text);
+}
+
+.mayla-pill--hero {
+  background: var(--pill-bg);
+  border: 1px solid var(--pill-border);
+  color: #fff;
+  backdrop-filter: blur(8px);
+}
+
+.mayla-pill--bom {
+  color: var(--mayla-green);
+  background: rgba(22, 163, 74, 0.10);
+  border-color: rgba(22, 163, 74, 0.18);
+}
+
+.mayla-pill--normal {
+  color: var(--mayla-blue);
+  background: rgba(59, 130, 246, 0.10);
+  border-color: rgba(59, 130, 246, 0.18);
+}
+
+.mayla-pill--atencao {
+  color: var(--mayla-amber);
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.22);
+}
+
+.mayla-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mayla-metric__value {
+  font-size: 46px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.mayla-metric__unit {
+  font-size: 14px;
+  opacity: 0.92;
+  font-weight: 700;
+}
+
+.mayla-kicker {
+  margin-top: 6px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+.mayla-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.mayla-meter {
+  margin-top: 10px;
+}
+
+.mayla-meter__track {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--bar-track);
+  overflow: hidden;
+}
+
+.mayla-meter__fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #D1D5DB 0%, #D1D5DB 100%);
+  opacity: 0.9;
+}
+
+.mayla-meter__fill--hrv {
+  background: linear-gradient(90deg, #EF4444 0%, #16A34A 100%);
+}
+
+.mayla-meter__fill--stress {
+  background: linear-gradient(90deg, #16A34A 0%, #EF4444 100%);
+}
+
+.mayla-meter__marker {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 8px 16px rgba(16, 24, 40, 0.18);
+  border: 3px solid rgba(17, 24, 39, 0.08);
+}
+
+.mayla-title-sm {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--mayla-muted);
+}
+
+.mayla-ring {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: conic-gradient(
+    var(--mayla-green) 0deg,
+    var(--mayla-green) var(--ring-deg, 120deg),
+    rgba(17, 24, 39, 0.10) var(--ring-deg, 120deg)
+  );
+}
+
+.mayla-ring__inner {
+  width: 50px;
+  height: 50px;
+  border-radius: 999px;
+  background: var(--mayla-bg);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
 }
 
 /* Mayla animations */
