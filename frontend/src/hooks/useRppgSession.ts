@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { captureJpegFrame } from '../utils/image';
 import {
   getWsBase,
@@ -15,7 +15,7 @@ export type UseRppgSessionOpts = {
   height: number;
   jpegQuality: number;
   maxChunkSize: number;
-  videoEl: HTMLVideoElement | null;
+  videoRef: RefObject<HTMLVideoElement | null>;
   workCanvas: HTMLCanvasElement;
   onResult: (r: SessionResultMessage) => void;
   onFaceDetected?: (v: boolean) => void;
@@ -48,7 +48,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
     height,
     jpegQuality,
     maxChunkSize,
-    videoEl,
+    videoRef,
     workCanvas,
     onResult,
     onFaceDetected,
@@ -191,6 +191,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
 
   const start = useCallback(
     async (sessionIdOverride?: string) => {
+      const videoEl = videoRef.current;
       if (!videoEl) {
         setState((s) => ({ ...s, error: 'Câmera não pronta.' }));
         return;
@@ -216,6 +217,8 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
 
       // Capture loop (throttled)
       captureIntervalRef.current = window.setInterval(async () => {
+        const v = videoRef.current;
+        if (!v) return;
         if (!clientRef.current?.isOpen()) return;
         const now = Date.now();
 
@@ -226,7 +229,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
         lastSendAtRef.current = now;
         try {
           const jpeg = await captureJpegFrame({
-            video: videoEl,
+            video: v,
             canvas: workCanvas,
             width,
             height,
@@ -306,7 +309,7 @@ export function useRppgSession(opts: UseRppgSessionOpts) {
       sendEnd,
       sessionId,
       targetFps,
-      videoEl,
+      videoRef,
       width,
       workCanvas,
     ],

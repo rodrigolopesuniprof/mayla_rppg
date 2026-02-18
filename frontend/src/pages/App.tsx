@@ -49,7 +49,7 @@ export default function App() {
     height: res.height,
     jpegQuality: effectiveParams.jpeg_quality,
     maxChunkSize: effectiveParams.max_chunk_size,
-    videoEl: webcam.videoRef.current,
+    videoRef: webcam.videoRef,
     workCanvas: webcam.workCanvas,
     onResult: (r) => {
       setResult(r as any);
