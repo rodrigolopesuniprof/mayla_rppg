@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import AppBar from '../components/AppBar';
 import { Bell } from 'lucide-react';
 import { labelBpm, labelHrv, labelPrq, labelRr, labelStress } from '../utils/labels';
+import { maylaPostVitalSigns } from '../utils/maylaApi';
 
 const STORAGE_KEY = 'mayla:lastResult';
 
@@ -119,6 +120,61 @@ export default function ScreenRelatorio() {
   const gradHrv = 'linear-gradient(90deg, #EF4444 0%, #16A34A 100%)';
   const gradStress = 'linear-gradient(90deg, #16A34A 0%, #EF4444 100%)';
 
+  const [sendStatus, setSendStatus] = useState<null | 'idle' | 'sending' | 'ok' | 'error'>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  async function handleSendToMayla() {
+    // Token must come from the container app (WebView) or a login screen.
+    // For now, read from sessionStorage (integration layer will set this).
+    const token = sessionStorage.getItem('mayla:token') || '';
+    const cpf = sessionStorage.getItem('mayla:cpf') || '';
+
+    if (!token) {
+      setSendStatus('error');
+      setSendError('Token Mayla ausente (mayla:token).');
+      return;
+    }
+    if (!cpf) {
+      setSendStatus('error');
+      setSendError('CPF ausente (mayla:cpf).');
+      return;
+    }
+    if (!result) {
+      setSendStatus('error');
+      setSendError('Sem resultado para enviar.');
+      return;
+    }
+
+    setSendStatus('sending');
+    setSendError(null);
+
+    const payload = {
+      cpf,
+      timestamp: new Date().toISOString(),
+      source: 'webapp-rppg',
+      metrics: {
+        bpm: result.bpm,
+        rr_bpm: result.rr_bpm,
+        prq: result.prq,
+        hrv_sdnn_ms: result.hrv_sdnn_ms,
+        stress_level: result.stress_level,
+        snr_db: result.snr_db,
+        quality: result.quality,
+        face_detect_rate: result.face_detect_rate,
+        duration_s: result.duration_s,
+        frames: result.frames_received,
+      },
+    };
+
+    try {
+      await maylaPostVitalSigns(token, payload);
+      setSendStatus('ok');
+    } catch (e: any) {
+      setSendStatus('error');
+      setSendError(e?.message ?? 'Falha ao enviar');
+    }
+  }
+
   return (
     <div className="min-h-screen bg-cream">
       <div className="max-w-[420px] mx-auto flex flex-col min-h-screen">
@@ -140,12 +196,14 @@ export default function ScreenRelatorio() {
             <br />vitais de hoje
           </h2>
 
-          {/* Hero BPM */}
           <div
             className="rounded-[22px] p-5 text-primary-foreground flex items-center gap-4 mb-3.5 relative overflow-hidden"
             style={{ background: 'linear-gradient(135deg, hsl(var(--rose)), #C0392B)' }}
           >
-            <div className="absolute -top-8 -right-5 w-28 h-28 rounded-full" style={{ background: 'rgba(255,255,255,.08)' }} />
+            <div
+              className="absolute -top-8 -right-5 w-28 h-28 rounded-full"
+              style={{ background: 'rgba(255,255,255,.08)' }}
+            />
             <span className="text-3xl">❤️</span>
             <div>
               <div className="font-display text-[42px] font-bold leading-none tracking-tight">
@@ -211,7 +269,25 @@ export default function ScreenRelatorio() {
             />
           </div>
 
-          {/* Quality */}
+          <div className="mt-5 flex flex-col gap-2">
+            <button
+              className="w-full py-3 rounded-[18px] bg-sand text-bark font-body text-[14px] font-medium"
+              onClick={handleSendToMayla}
+              disabled={sendStatus === 'sending'}
+            >
+              {sendStatus === 'sending' ? 'Enviando…' : 'Enviar para Mayla Saúde'}
+            </button>
+            {sendStatus === 'ok' ? (
+              <small className="text-xs text-mayla-green">Enviado com sucesso.</small>
+            ) : sendStatus === 'error' ? (
+              <small className="text-xs text-rose">Falha no envio: {sendError}</small>
+            ) : null}
+            <small className="text-xs text-muted-foreground">
+              Integração: o token deve ser fornecido pelo app container (sessionStorage: mayla:token) e o CPF em
+              sessionStorage: mayla:cpf.
+            </small>
+          </div>
+
           <div className="mt-5 bg-card rounded-[18px] p-4 shadow-[0_2px_8px_rgba(0,0,0,.05)]">
             <div className="text-[11px] text-muted-foreground tracking-wider uppercase mb-2">Qualidade</div>
             {!result ? (
