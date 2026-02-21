@@ -7,7 +7,7 @@ import urllib.request
 from typing import Any, Dict, Optional, Tuple
 
 
-MAYLA_API_BASE = os.getenv("MAYLA_API_BASE", "https://api.saudecomvc.com.br").rstrip("/")
+MAYLA_API_BASE = os.getenv("MAYLA_API_BASE", "https://dev.saudecomvc.com.br").rstrip("/")
 
 
 class MaylaApiError(RuntimeError):
