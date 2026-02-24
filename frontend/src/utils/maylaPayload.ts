@@ -22,46 +22,38 @@ function heartRateStatus(bpm: number): HeartRateStatus {
 }
 
 export function buildMaylaVitalSignsPayload(input: SessionVitalsInput) {
-  const vital_signs: any[] = [];
+  const rppgItem: any = {};
 
   if (input.bpm != null && Number.isFinite(input.bpm)) {
     const bpm = Math.round(input.bpm);
-    vital_signs.push({
-      heart_rate: {
-        bpm,
-        status: heartRateStatus(bpm),
-        timestamp: input.timestamp,
-      },
-    });
+    rppgItem.heart_rate = {
+      bpm,
+      status: heartRateStatus(bpm),
+      timestamp: input.timestamp,
+    };
   }
 
   if (input.prq != null && Number.isFinite(input.prq)) {
-    vital_signs.push({
-      razao_prq: {
-        value: input.prq,
-        timestamp: input.timestamp,
-      },
-    });
+    rppgItem.razao_prq = {
+      value: input.prq,
+      timestamp: input.timestamp,
+    };
   }
 
   if (input.hrvSdnnMs != null && Number.isFinite(input.hrvSdnnMs)) {
-    vital_signs.push({
-      hrv: {
-        value: input.hrvSdnnMs,
-        unit: 'ms',
-        timestamp: input.timestamp,
-      },
-    });
+    rppgItem.hrv = {
+      value: input.hrvSdnnMs,
+      unit: 'ms',
+      timestamp: input.timestamp,
+    };
   }
 
   if (input.stressLevel != null && Number.isFinite(input.stressLevel)) {
-    vital_signs.push({
-      stress_level: {
-        value: input.stressLevel,
-        scale: '1-30',
-        timestamp: input.timestamp,
-      },
-    });
+    rppgItem.stress_level = {
+      value: input.stressLevel,
+      scale: '1-30',
+      timestamp: input.timestamp,
+    };
   }
 
   const hasQualityFields =
@@ -79,25 +71,24 @@ export function buildMaylaVitalSignsPayload(input: SessionVitalsInput) {
       qualidade_da_imagem.face_detect_rate = input.faceDetectRate;
     }
 
-    // Drop undefined keys (so Mayla receives a clean JSON object).
     Object.keys(qualidade_da_imagem).forEach((k) => {
       if (qualidade_da_imagem[k] === undefined) delete qualidade_da_imagem[k];
     });
 
-    vital_signs.push({ qualidade_da_imagem });
+    rppgItem.qualidade_da_imagem = qualidade_da_imagem;
   }
 
   if (input.framesCount != null && Number.isFinite(input.framesCount)) {
-    vital_signs.push({
-      frames: {
-        count: input.framesCount,
-        timestamp: input.timestamp,
-      },
-    });
+    rppgItem.frames = {
+      count: input.framesCount,
+      timestamp: input.timestamp,
+    };
   }
+
+  const rPPG = Object.keys(rppgItem).length ? [rppgItem] : [];
 
   return {
     device_id: input.deviceId,
-    vital_signs,
+    rPPG,
   };
 }
