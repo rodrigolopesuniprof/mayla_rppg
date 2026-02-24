@@ -23,7 +23,7 @@ export default function ScreenLogin() {
       if (token) sessionStorage.setItem('mayla:token', token);
       if (cpf) sessionStorage.setItem('mayla:cpf', cpf);
 
-      navigate('/camera');
+      navigate('/');
     } catch (err: any) {
       const raw = err?.message ?? 'Falha no login';
       setErrorMsg(raw);

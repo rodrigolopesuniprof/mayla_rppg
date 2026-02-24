@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppBar from '../components/AppBar';
 import { User } from 'lucide-react';
@@ -15,6 +15,13 @@ export default function ScreenAutodeclaracao() {
   const navigate = useNavigate();
   const [selectedMood, setSelectedMood] = useState(4);
   const [meds, setMeds] = useState<boolean | null>(true);
+
+  useEffect(() => {
+    const token = sessionStorage.getItem('mayla:token');
+    if (!token) {
+      navigate('/login', { replace: true });
+    }
+  }, [navigate]);
 
   const today = new Date();
   const dayName = today.toLocaleDateString('pt-BR', { weekday: 'long' });
