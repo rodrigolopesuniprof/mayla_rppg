@@ -3,6 +3,7 @@ import AppBar from '../components/AppBar';
 import { Bell } from 'lucide-react';
 import { labelBpm, labelHrv, labelPrq, labelRr, labelStress } from '../utils/labels';
 import { maylaPostVitalSigns } from '../utils/maylaApi';
+import { buildMaylaVitalSignsPayload } from '../utils/maylaPayload';
 
 const STORAGE_KEY = 'mayla:lastResult';
 
@@ -148,22 +149,22 @@ export default function ScreenRelatorio() {
     setSendStatus('sending');
     setSendError(null);
 
+    const timestamp = new Date().toISOString();
+
     const payload = {
       cpf,
-      timestamp: new Date().toISOString(),
-      source: 'webapp-rppg',
-      metrics: {
+      ...buildMaylaVitalSignsPayload({
+        deviceId: 'Versao_Navegador',
+        timestamp,
         bpm: result.bpm,
-        rr_bpm: result.rr_bpm,
         prq: result.prq,
-        hrv_sdnn_ms: result.hrv_sdnn_ms,
-        stress_level: result.stress_level,
-        snr_db: result.snr_db,
+        hrvSdnnMs: result.hrv_sdnn_ms,
+        stressLevel: result.stress_level,
         quality: result.quality,
-        face_detect_rate: result.face_detect_rate,
-        duration_s: result.duration_s,
-        frames: result.frames_received,
-      },
+        snrDb: result.snr_db,
+        faceDetectRate: result.face_detect_rate,
+        framesCount: result.frames_received,
+      }),
     };
 
     try {
