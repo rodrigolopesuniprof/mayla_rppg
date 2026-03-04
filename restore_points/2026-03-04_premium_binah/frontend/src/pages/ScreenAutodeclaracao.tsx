@@ -1,14 +1,7 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AppBar from '../components/AppBar';
-import { User, Sparkles } from 'lucide-react';
-import { getApiBase } from '../utils/ws';
-import {
-  installPremiumResultHandlers,
-  isNativeContainer,
-  startPremiumMeasurement,
-  type PremiumResult,
-} from '../utils/nativeBridge';
+import { User } from 'lucide-react';
 
 const moods = [
   { emoji: '😣', label: 'PÉSSIMO' },
@@ -18,15 +11,10 @@ const moods = [
   { emoji: '🤩', label: 'ÓTIMO' },
 ];
 
-const STORAGE_KEY = 'mayla:lastResult';
-
 export default function ScreenAutodeclaracao() {
   const navigate = useNavigate();
   const [selectedMood, setSelectedMood] = useState(4);
   const [meds, setMeds] = useState<boolean | null>(true);
-
-  const [premiumStatus, setPremiumStatus] = useState<null | 'idle' | 'checking' | 'starting' | 'error'>(null);
-  const [premiumError, setPremiumError] = useState<string | null>(null);
 
   useEffect(() => {
     const token = sessionStorage.getItem('mayla:token');
@@ -35,113 +23,9 @@ export default function ScreenAutodeclaracao() {
     }
   }, [navigate]);
 
-  // Install global callbacks once (native will call window.onPremiumMeasurementResult/Error)
-  useEffect(() => {
-    installPremiumResultHandlers({
-      onResult: (r: PremiumResult) => {
-        // Map premium result into the same shape the report screen expects.
-        const unified = {
-          bpm: r.bpm ?? null,
-          confidence: r.confidence ?? 1,
-          quality: (r.quality as any) ?? 'good',
-          message: 'Medição premium (Binah).',
-          duration_s: r.duration_s ?? 0,
-          frames_received: 0,
-          face_detect_rate: 1,
-          snr_db: null,
-          bpm_series: undefined,
-
-          rr_bpm: r.rr_bpm ?? null,
-          prq: r.prq ?? null,
-          hrv_sdnn_ms: r.hrv_sdnn_ms ?? null,
-          stress_level: r.stress_level ?? null,
-
-          // premium extra
-          spo2_pct: r.spo2_pct ?? null,
-          bp_systolic_mmHg: r.bp_systolic_mmHg ?? null,
-          bp_diastolic_mmHg: r.bp_diastolic_mmHg ?? null,
-
-          provider: r.provider,
-        };
-
-        try {
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(unified));
-        } catch {
-          // ignore
-        }
-
-        setPremiumStatus('idle');
-        setPremiumError(null);
-        navigate('/relatorio');
-      },
-      onError: (e) => {
-        setPremiumStatus('error');
-        setPremiumError(e?.message ?? 'Falha na medição premium');
-      },
-    });
-  }, [navigate]);
-
   const today = new Date();
   const dayName = today.toLocaleDateString('pt-BR', { weekday: 'long' });
   const dateStr = today.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
-
-  const isNative = useMemo(() => isNativeContainer(), []);
-
-  async function handleStartPremium() {
-    setPremiumStatus('checking');
-    setPremiumError(null);
-
-    const token = sessionStorage.getItem('mayla:token') || '';
-    const cpf = sessionStorage.getItem('mayla:cpf') || '';
-
-    if (!token) {
-      setPremiumStatus('error');
-      setPremiumError('Faça login para habilitar a medição premium.');
-      return;
-    }
-
-    if (!cpf) {
-      setPremiumStatus('error');
-      setPremiumError('CPF ausente (mayla:cpf).');
-      return;
-    }
-
-    try {
-      const resp = await fetch(`${getApiBase()}/premium/access-check`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ cpf }),
-      });
-      if (!resp.ok) {
-        const txt = await resp.text();
-        throw new Error(txt || `HTTP ${resp.status}`);
-      }
-      const data = (await resp.json()) as { allowed: boolean; reason?: string | null };
-      if (!data.allowed) {
-        setPremiumStatus('error');
-        setPremiumError(data.reason || 'Seu plano não permite medição premium.');
-        return;
-      }
-
-      if (!isNative) {
-        setPremiumStatus('error');
-        setPremiumError('Medição premium disponível apenas no app (iOS/Android).');
-        return;
-      }
-
-      setPremiumStatus('starting');
-      startPremiumMeasurement({ cpf, modules: ['ALL'] });
-
-      // Native will call window.onPremiumMeasurementResult/Error.
-      setPremiumStatus('idle');
-    } catch (e: any) {
-      setPremiumStatus('error');
-      setPremiumError(e?.message ?? 'Falha ao iniciar premium');
-    }
-  }
 
   return (
     <div className="min-h-screen bg-cream">
@@ -225,7 +109,7 @@ export default function ScreenAutodeclaracao() {
 
           <h3 className="font-display text-[17px] font-medium text-ink mb-3.5">Já tomou suas medicações?</h3>
 
-          <div className="flex gap-3 mb-5">
+          <div className="flex gap-3 mb-7">
             <button
               onClick={() => setMeds(true)}
               className={`flex-1 py-3.5 rounded-2xl font-body text-sm font-medium flex items-center justify-center gap-2 transition-all ${
@@ -248,42 +132,6 @@ export default function ScreenAutodeclaracao() {
             </button>
           </div>
 
-          {/* Premium card */}
-          <div className="bg-card rounded-[18px] p-4 shadow-[0_2px_8px_rgba(0,0,0,.05)] mb-4">
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center bg-sand">
-                <Sparkles size={16} className="text-rose" />
-              </div>
-              <div>
-                <div className="font-display text-[15px] font-medium text-ink">Medição premium (Binah)</div>
-                <div className="text-[11.5px] text-muted-foreground">
-                  Inclui métricas avançadas (SpO₂, PA, etc). Nesta fase, apenas informamos o custo (sem cobrança).
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <button
-                onClick={handleStartPremium}
-                disabled={premiumStatus === 'checking' || premiumStatus === 'starting'}
-                className="w-full py-3 rounded-[16px] text-primary-foreground font-body text-[14px] font-medium disabled:opacity-60"
-                style={{
-                  background: 'linear-gradient(135deg, #111827, #3f1d1d)',
-                  boxShadow: '0 8px 22px rgba(17,24,39,.25)',
-                }}
-              >
-                {premiumStatus === 'checking'
-                  ? 'Verificando acesso…'
-                  : premiumStatus === 'starting'
-                    ? 'Abrindo medição…'
-                    : isNative
-                      ? 'Iniciar medição premium'
-                      : 'Disponível no app (iOS/Android)'}
-              </button>
-              {premiumError ? <div className="text-[12px] text-rose mt-2">{premiumError}</div> : null}
-            </div>
-          </div>
-
           <button
             onClick={() => navigate('/consentimento')}
             className="w-full py-4 rounded-[18px] text-primary-foreground font-body text-[15px] font-medium tracking-wide"
@@ -292,7 +140,7 @@ export default function ScreenAutodeclaracao() {
               boxShadow: '0 8px 24px rgba(232,87,74,.3)',
             }}
           >
-            Medição normal →
+            Continuar →
           </button>
         </div>
       </div>

@@ -22,12 +22,6 @@ type SessionResult = {
   prq?: number | null;
   hrv_sdnn_ms?: number | null;
   stress_level?: number | null;
-
-  // premium extras
-  spo2_pct?: number | null;
-  bp_systolic_mmHg?: number | null;
-  bp_diastolic_mmHg?: number | null;
-  provider?: 'binah' | 'pyvhr' | string;
 };
 
 function fmt(n: number | null | undefined, digits = 0) {
@@ -160,15 +154,12 @@ export default function ScreenRelatorio() {
     const payload = {
       cpf,
       ...buildMaylaVitalSignsPayload({
-        deviceId: result.provider === 'binah' ? 'Binah_SDK' : 'Versao_Navegador',
+        deviceId: 'Versao_Navegador',
         timestamp,
         bpm: result.bpm,
         prq: result.prq,
         hrvSdnnMs: result.hrv_sdnn_ms,
         stressLevel: result.stress_level,
-        spo2Pct: result.spo2_pct,
-        systolicMmHg: result.bp_systolic_mmHg,
-        diastolicMmHg: result.bp_diastolic_mmHg,
         quality: result.quality,
         snrDb: result.snr_db,
         faceDetectRate: result.face_detect_rate,
@@ -205,12 +196,6 @@ export default function ScreenRelatorio() {
             Seus <em className="text-rose italic">sinais</em>
             <br />vitais de hoje
           </h2>
-
-          {result?.provider === 'binah' ? (
-            <div className="text-[11px] text-muted-foreground mb-3">
-              Fonte: <b className="text-ink">Medição premium (Binah)</b>
-            </div>
-          ) : null}
 
           <div
             className="rounded-[22px] p-5 text-primary-foreground flex items-center gap-4 mb-3.5 relative overflow-hidden"
@@ -284,23 +269,6 @@ export default function ScreenRelatorio() {
               marker={stressL?.marker ?? null}
             />
           </div>
-
-          {/* Premium blood metrics */}
-          {result?.provider === 'binah' ? (
-            <div className="mt-3.5 grid grid-cols-2 gap-2.5">
-              <VitalBox icon="💧" title="SpO₂" value={fmt(result?.spo2_pct)} unit="%" />
-              <VitalBox
-                icon="🩸"
-                title="Pressão arterial"
-                value={
-                  result?.bp_systolic_mmHg == null || result?.bp_diastolic_mmHg == null
-                    ? '—'
-                    : `${Math.round(result.bp_systolic_mmHg)}/${Math.round(result.bp_diastolic_mmHg)}`
-                }
-                unit="mmHg"
-              />
-            </div>
-          ) : null}
 
           <div className="mt-5 flex flex-col gap-2">
             <button

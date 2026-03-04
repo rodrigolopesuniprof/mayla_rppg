@@ -9,11 +9,6 @@ export type SessionVitalsInput = {
   hrvSdnnMs?: number | null;
   stressLevel?: number | null;
 
-  // Premium (Binah) extras
-  spo2Pct?: number | null;
-  systolicMmHg?: number | null;
-  diastolicMmHg?: number | null;
-
   quality?: 'good' | 'medium' | 'poor' | null;
   snrDb?: number | null;
   faceDetectRate?: number | null;
@@ -57,29 +52,6 @@ export function buildMaylaVitalSignsPayload(input: SessionVitalsInput) {
     rppgItem.stress_level = {
       value: input.stressLevel,
       scale: '1-30',
-      timestamp: input.timestamp,
-    };
-  }
-
-  // Premium extras (when provided by Binah)
-  if (input.spo2Pct != null && Number.isFinite(input.spo2Pct)) {
-    rppgItem.spo2 = {
-      value: input.spo2Pct,
-      unit: '%',
-      timestamp: input.timestamp,
-    };
-  }
-
-  if (
-    input.systolicMmHg != null &&
-    Number.isFinite(input.systolicMmHg) &&
-    input.diastolicMmHg != null &&
-    Number.isFinite(input.diastolicMmHg)
-  ) {
-    rppgItem.blood_pressure = {
-      systolic: input.systolicMmHg,
-      diastolic: input.diastolicMmHg,
-      unit: 'mmHg',
       timestamp: input.timestamp,
     };
   }
