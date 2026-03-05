@@ -151,6 +151,14 @@ export default function ScreenRelatorio() {
 
     const timestamp = new Date().toISOString();
 
+    const mental = (() => {
+      try {
+        return JSON.parse(sessionStorage.getItem('mayla:mental_health') || '{}');
+      } catch {
+        return {};
+      }
+    })();
+
     const payload = {
       cpf,
       ...buildMaylaVitalSignsPayload({
@@ -165,6 +173,7 @@ export default function ScreenRelatorio() {
         faceDetectRate: result.face_detect_rate,
         framesCount: result.frames_received,
       }),
+      ...mental,
     };
 
     try {

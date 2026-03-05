@@ -4,6 +4,8 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 
+const BACKEND_PORT = 8001;
+
 function startFastApiBackend() {
   return {
     name: 'start-fastapi-backend',
@@ -17,7 +19,7 @@ function startFastApiBackend() {
         '--host',
         '127.0.0.1',
         '--port',
-        '8000',
+        String(BACKEND_PORT),
       ];
 
       const spawnWith = (cmd: string) =>
@@ -93,23 +95,19 @@ export default defineConfig({
   root: 'frontend',
   plugins: [startFastApiBackend(), react()],
   server: {
-    port: 5173,
-    strictPort: true,
-    // Optional: set VITE_API_BASE/VITE_WS_BASE in production.
-    // In local dev we run the FastAPI backend on :8000 and use this proxy.
+    // NOTE: do not force a fixed port here. Dyad/dev runner may pass --port to the dev command.
     proxy: {
       '/sessions': {
-        target: 'http://127.0.0.1:8000',
+        target: `http://127.0.0.1:${BACKEND_PORT}`,
         changeOrigin: true,
       },
       '/ws': {
-        // Use HTTP target + ws:true for reliable upgrade handling
-        target: 'http://127.0.0.1:8000',
+        target: `http://127.0.0.1:${BACKEND_PORT}`,
         ws: true,
         changeOrigin: true,
       },
       '/mayla': {
-        target: 'http://127.0.0.1:8000',
+        target: `http://127.0.0.1:${BACKEND_PORT}`,
         changeOrigin: true,
       },
     },

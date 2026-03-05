@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tela 1B · Saúde Mental</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,700;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --cream: #faf8f5;
+        --sand: #e7dccf;
+        --card: #ffffff;
+        --ink: #2a1c16;
+        --muted: #8a7e77;
+        --rose: #e8564a;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'DM Sans', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+        background: var(--cream);
+        color: var(--ink);
+      }
+      .app {
+        max-width: 420px;
+        margin: 0 auto;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .appbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px 10px;
+        min-height: 72px;
+      }
+      .back {
+        width: 36px;
+        height: 36px;
+        border-radius: 999px;
+        border: 0;
+        background: var(--sand);
+        color: var(--ink);
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .logo {
+        font-family: 'Fraunces', serif;
+        font-weight: 600;
+        font-size: 16px;
+        letter-spacing: 0.2px;
+      }
+      .spacer {
+        width: 36px;
+        height: 36px;
+      }
+      .content {
+        flex: 1;
+        overflow: auto;
+        padding: 0 24px 168px;
+      }
+      h1 {
+        font-family: 'Fraunces', serif;
+        font-size: 26px;
+        font-weight: 500;
+        margin: 6px 0 6px;
+        line-height: 1.12;
+      }
+      h1 em {
+        color: var(--rose);
+        font-style: italic;
+      }
+      .date {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 18px;
+      }
+      .q {
+        background: var(--card);
+        border-radius: 18px;
+        padding: 16px;
+        margin: 14px 0;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+      }
+      .label {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+        margin: 0 0 8px;
+      }
+      .question {
+        font-size: 14px;
+        font-weight: 600;
+        margin: 0 0 12px;
+        line-height: 1.25;
+      }
+      .likert {
+        display: flex;
+        gap: 8px;
+      }
+      .opt {
+        flex: 1;
+        min-width: 0;
+        border-radius: 16px;
+        padding: 10px 6px;
+        border: 2px solid transparent;
+        background: var(--sand);
+        cursor: pointer;
+        transition: 120ms ease;
+        outline: none;
+      }
+      .opt[aria-checked='true'] {
+        border-color: var(--rose);
+        background: rgba(232, 86, 74, 0.08);
+      }
+      .opt:focus-visible {
+        box-shadow: 0 0 0 3px rgba(232, 86, 74, 0.25);
+      }
+      .emoji {
+        font-size: 22px;
+        line-height: 1;
+        display: block;
+        text-align: center;
+      }
+      .t {
+        margin-top: 6px;
+        font-size: 10px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .opt[aria-checked='true'] .t {
+        color: var(--rose);
+        font-weight: 600;
+      }
+      .footer {
+        position: sticky;
+        bottom: 0;
+        background: var(--cream);
+        padding: 10px 24px 24px;
+        border-top: 1px solid rgba(231, 220, 207, 0.7);
+      }
+      .btn {
+        width: 100%;
+        border: 0;
+        border-radius: 18px;
+        padding: 16px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: 120ms ease;
+      }
+      .btn[disabled] {
+        background: var(--sand);
+        color: var(--ink);
+        cursor: not-allowed;
+      }
+      .btn:not([disabled]) {
+        color: #fff;
+        background: linear-gradient(135deg, var(--rose), #f07a6c);
+        box-shadow: 0 8px 24px rgba(232, 86, 74, 0.3);
+      }
+      .note {
+        text-align: center;
+        font-size: 11.5px;
+        color: var(--muted);
+        margin: 8px 0 0;
+      }
+      .screen {
+        text-align: center;
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app" aria-label="Tela 1B · Saúde Mental">
+      <div class="appbar">
+        <button class="back" aria-label="Voltar" onclick="history.back()">←</button>
+        <div class="logo">Mayla Saúde</div>
+        <div class="spacer"></div>
+      </div>
+
+      <div class="content">
+        <h1>Como está sua<br /><em>mente hoje?</em></h1>
+        <p class="date" id="date"></p>
+
+        <div class="q" data-group="depression_phq">
+          <p class="label">HUMOR</p>
+          <p class="question">Nas últimas 2 semanas, você se sentiu desanimado ou sem esperança?</p>
+          <div class="likert" role="radiogroup" aria-label="Humor">
+            <button class="opt" role="radio" aria-checked="false" data-value="1"><span class="emoji">😞</span><span class="t">Sempre</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="2"><span class="emoji">😟</span><span class="t">Frequente</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="3"><span class="emoji">😐</span><span class="t">Às vezes</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="4"><span class="emoji">🙂</span><span class="t">Raramente</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="5"><span class="emoji">😊</span><span class="t">Nunca</span></button>
+          </div>
+        </div>
+
+        <div class="q" data-group="anxiety_gad">
+          <p class="label">ANSIEDADE</p>
+          <p class="question">Você se sentiu nervoso ou ansioso hoje?</p>
+          <div class="likert" role="radiogroup" aria-label="Ansiedade">
+            <button class="opt" role="radio" aria-checked="false" data-value="1"><span class="emoji">😨</span><span class="t">Muito</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="2"><span class="emoji">😰</span><span class="t">Bastante</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="3"><span class="emoji">😬</span><span class="t">Moderado</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="4"><span class="emoji">😐</span><span class="t">Pouco</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="5"><span class="emoji">😌</span><span class="t">Nada</span></button>
+          </div>
+        </div>
+
+        <div class="q" data-group="stress_pss">
+          <p class="label">ESTRESSE</p>
+          <p class="question">Você sentiu que as coisas estavam fora do seu controle?</p>
+          <div class="likert" role="radiogroup" aria-label="Estresse">
+            <button class="opt" role="radio" aria-checked="false" data-value="1"><span class="emoji">😫</span><span class="t">Completo</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="2"><span class="emoji">😟</span><span class="t">Bastante</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="3"><span class="emoji">😐</span><span class="t">Moderado</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="4"><span class="emoji">🙂</span><span class="t">Pouco</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="5"><span class="emoji">😎</span><span class="t">Nada</span></button>
+          </div>
+        </div>
+
+        <div class="q" data-group="energy_level">
+          <p class="label">ENERGIA</p>
+          <p class="question">Como está seu nível de energia agora?</p>
+          <div class="likert" role="radiogroup" aria-label="Energia">
+            <button class="opt" role="radio" aria-checked="false" data-value="1"><span class="emoji">🪫</span><span class="t">Sem energia</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="2"><span class="emoji">😪</span><span class="t">Baixo</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="3"><span class="emoji">😐</span><span class="t">Regular</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="4"><span class="emoji">⚡</span><span class="t">Bom</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="5"><span class="emoji">🔥</span><span class="t">Ótimo</span></button>
+          </div>
+        </div>
+
+        <div class="q" data-group="sleep_quality">
+          <p class="label">SONO</p>
+          <p class="question">Como você dormiu na última noite?</p>
+          <div class="likert" role="radiogroup" aria-label="Sono">
+            <button class="opt" role="radio" aria-checked="false" data-value="1"><span class="emoji">😫</span><span class="t">Muito mal</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="2"><span class="emoji">😞</span><span class="t">Mal</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="3"><span class="emoji">😐</span><span class="t">Regular</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="4"><span class="emoji">😴</span><span class="t">Bem</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="5"><span class="emoji">🌟</span><span class="t">Muito bem</span></button>
+          </div>
+        </div>
+
+        <div class="q" data-group="social_support">
+          <p class="label">SUPORTE SOCIAL</p>
+          <p class="question">Você sente que tem pessoas com quem pode contar quando precisa?</p>
+          <div class="likert" role="radiogroup" aria-label="Suporte social">
+            <button class="opt" role="radio" aria-checked="false" data-value="1"><span class="emoji">😔</span><span class="t">Nenhuma</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="2"><span class="emoji">😕</span><span class="t">Quase</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="3"><span class="emoji">😐</span><span class="t">Algumas</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="4"><span class="emoji">🤝</span><span class="t">Sim</span></button>
+            <button class="opt" role="radio" aria-checked="false" data-value="5"><span class="emoji">💛</span><span class="t">Sim, muito</span></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="btn" id="continue" disabled>Continuar →</button>
+        <p class="note">Suas respostas são sigilosas e não compartilhadas.</p>
+        <p class="screen">TELA 1B · SAÚDE MENTAL</p>
+      </div>
+    </div>
+
+    <script>
+      function cap(s) {
+        return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+      }
+
+      const now = new Date();
+      const day = now.toLocaleDateString('pt-BR', { day: 'numeric' });
+      const month = now.toLocaleDateString('pt-BR', { month: 'long' });
+      const weekday = cap(now.toLocaleDateString('pt-BR', { weekday: 'long' }));
+      document.getElementById('date').textContent = `${day} de ${month} · ${weekday}`;
+
+      const answers = {};
+      const groups = document.querySelectorAll('.q');
+      const btn = document.getElementById('continue');
+
+      function updateButton() {
+        const ok = groups.length && Object.keys(answers).length === groups.length;
+        btn.disabled = !ok;
+      }
+
+      groups.forEach((g) => {
+        const key = g.getAttribute('data-group');
+        const options = g.querySelectorAll('.opt');
+
+        options.forEach((o) => {
+          o.addEventListener('click', () => {
+            options.forEach((x) => x.setAttribute('aria-checked', 'false'));
+            o.setAttribute('aria-checked', 'true');
+            answers[key] = Number(o.getAttribute('data-value'));
+            updateButton();
+          });
+        });
+      });
+
+      updateButton();
+    </script>
+  </body>
+</html>

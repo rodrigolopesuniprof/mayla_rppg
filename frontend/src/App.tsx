@@ -5,6 +5,7 @@ import ScreenConsentimento from './pages/ScreenConsentimento';
 import ScreenCamera from './pages/ScreenCamera';
 import ScreenRelatorio from './pages/ScreenRelatorio';
 import ScreenLogin from './pages/ScreenLogin';
+import ScreenSaudeMental from './pages/ScreenSaudeMental';
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<ScreenAutodeclaracao />} />
         <Route path="/login" element={<ScreenLogin />} />
+        <Route path="/saude-mental" element={<ScreenSaudeMental />} />
         <Route path="/consentimento" element={<ScreenConsentimento />} />
         <Route path="/camera" element={<ScreenCamera />} />
         <Route path="/relatorio" element={<ScreenRelatorio />} />

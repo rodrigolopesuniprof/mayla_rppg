@@ -133,7 +133,7 @@ export default function ScreenAutodeclaracao() {
           </div>
 
           <button
-            onClick={() => navigate('/consentimento')}
+            onClick={() => navigate('/saude-mental')}
             className="w-full py-4 rounded-[18px] text-primary-foreground font-body text-[15px] font-medium tracking-wide"
             style={{
               background: 'linear-gradient(135deg, hsl(var(--rose)), hsl(var(--rose-lt)))',
